@@ -152,6 +152,7 @@ static GtkWidget *make_app_card(GAppInfo *info, GtkWindow *parent)
 #ifdef G_OS_UNIX
     if (id)
         g_object_set_data_full(G_OBJECT(button), "lh-app-id", g_strdup(id), g_free);
+    g_signal_connect(button, "clicked", G_CALLBACK(launch_store_app), NULL);
 #endif
 
     GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
@@ -159,7 +160,7 @@ static GtkWidget *make_app_card(GAppInfo *info, GtkWindow *parent)
     GtkWidget *uninstall = gtk_button_new_with_label("Uninstall");
     gtk_widget_add_css_class(about, "lh-store-card-action");
     gtk_widget_add_css_class(uninstall, "lh-store-card-action");
-    g_object_set_data(G_OBJECT(about), "lh-app-info", info);
+    g_object_set_data_full(G_OBJECT(about), "lh-app-info", g_object_ref(info), g_object_unref);
     g_object_set_data_full(G_OBJECT(uninstall), "lh-package-name",
                            g_strdup(id ? id : ""), g_free);
     g_signal_connect(about, "clicked", G_CALLBACK(app_about), parent);
