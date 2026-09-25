@@ -5,7 +5,7 @@ PKG_CONFIG ?= pkg-config
 
 # Use TARGET=... to select a toolchain explicitly.
 # With no TARGET, detect the current host OS/CPU automatically.
-TARGET ?= $(shell sh -c 'os=$$(uname -s 2>/dev/null | tr "[:upper:]" "[:lower:]"); m=$$(uname -m 2>/dev/null); case "$$os:$$m" in linux:x86_64|linux:amd64) echo linux-generic-x86_64;; linux:aarch64|linux:arm64) echo linux-generic-aarch64;; linux:armv7l|linux:armv7) echo linux-generic-armv7;; linux:armv6l|linux:armv6) echo linux-generic-armv6;; linux:i[3456]86) echo linux-generic-i686;; linux:riscv64) echo linux-generic-riscv64;; linux:ppc64le) echo linux-generic-ppc64el;; linux:ppc64) echo linux-generic-ppc64;; linux:s390x) echo linux-generic-s390x;; linux:mips64*) echo linux-generic-mips64;; linux:mips*) echo linux-generic-mips;; darwin:x86_64|darwin:amd64) echo darwin-x86_64;; darwin:arm64) echo darwin-aarch64;; freebsd:x86_64|freebsd:amd64) echo freebsd-x86_64;; freebsd:aarch64|freebsd:arm64) echo freebsd-aarch64;; *) echo generic;; esac')
+TARGET ?= $(shell sh -c 'os=$(uname -s 2>/dev/null | tr "[:upper:]" "[:lower:]"); id=$(. /etc/os-release 2>/dev/null && printf "%s" "$ID"); m=$(uname -m 2>/dev/null); case "$os:$m:$id" in linux:x86_64:cachyos) echo linux-cachy;; linux:x86_64:ubuntu) echo linux-ubuntu-x86_64;; linux:x86_64:debian) echo linux-debian-x86_64;; linux:x86_64:fedora) echo linux-fedora-x86_64;; linux:x86_64:arch) echo linux-arch-x86_64;; linux:x86_64:*) echo linux-generic-x86_64;; linux:aarch64:* ) echo linux-generic-aarch64;; linux:armv7l:*|linux:armv7:* ) echo linux-generic-armv7;; linux:armv6l:*|linux:armv6:* ) echo linux-generic-armv6;; linux:i[3456]86:* ) echo linux-generic-i686;; linux:riscv64:* ) echo linux-generic-riscv64;; linux:ppc64le:* ) echo linux-generic-ppc64el;; linux:ppc64:* ) echo linux-generic-ppc64;; linux:s390x:* ) echo linux-generic-s390x;; linux:mips64*:* ) echo linux-generic-mips64;; linux:mips*:* ) echo linux-generic-mips;; darwin:x86_64:*|darwin:amd64:* ) echo darwin-x86_64;; darwin:arm64:* ) echo darwin-aarch64;; freebsd:x86_64:*|freebsd:amd64:* ) echo freebsd-x86_64;; freebsd:aarch64:*|freebsd:arm64:* ) echo freebsd-aarch64;; *) echo generic;; esac')
 
 RESET := \033[0m
 CYAN := \033[1;36m
@@ -135,7 +135,7 @@ TARGET_CFLAGS_linux-generic-x86_64 := -march=x86-64
 TARGET_CFLAGS_linux-generic-x86_64v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-generic-x86_64v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-generic-x86_64v4 := -march=x86-64-v4
-TARGET_CFLAGS_linux-cachy := -march=x86-64-v3
+TARGET_CFLAGS_linux-cachy := -march=x86-64
 TARGET_CFLAGS_linux-alhp-v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-alhp-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-alhp-v4 := -march=x86-64-v4
