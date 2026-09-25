@@ -15,9 +15,8 @@ void create_longhorn_sidebar(GtkApplication *app) {
     // Keep the sidebar below the 40px taskbar.
     gtk_layer_set_margin(gtk_win, GTK_LAYER_SHELL_EDGE_BOTTOM, 40);
 
-    // Give GTK a non-zero initial size; the top/bottom anchors determine height.
+    // Give GTK a non-zero initial width. The top/bottom anchors determine height.
     gtk_widget_set_size_request(window, 220, 1);
-    gtk_layer_set_size(gtk_win, 220, 1);
 
     // Reserve screen space.
     gtk_layer_auto_exclusive_zone_enable(gtk_win);
