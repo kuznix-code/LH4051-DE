@@ -1,10 +1,25 @@
 #include "longhorn.h"
 
 void create_longhorn_panel(GtkApplication *app) {
-    GtkWidget *panel = gtk_application_window_new(app);
-    GtkWindow *window = GTK_WINDOW(panel);
-    gtk_window_set_title(window, "Longhorn Taskbar");
-    gtk_window_set_default_size(window, 1024, 40);
-    // Taskbar layout controls (Start button, tray, application bar) go here
-    gtk_window_present(window);
+    GtkWidget *window = gtk_application_window_new(app);
+    GtkWindow *gtk_win = GTK_WINDOW(window);
+    
+    gtk_layer_init_for_window(gtk_win);
+    gtk_layer_set_layer(gtk_win, GTK_LAYER_SHELL_LAYER_TOP);
+    
+    // Anchor to bottom, left, and right
+    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
+    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
+    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
+    
+    // Reserve screen space
+    gtk_layer_auto_exclusive_zone_enable(gtk_win);
+    
+    gtk_widget_set_size_request(window, -1, 40);
+    
+    // Apply styling
+    gtk_widget_add_css_class(window, "lh-panel");
+    gtk_widget_add_css_class(window, "taskbar");
+    
+    gtk_window_present(gtk_win);
 }
