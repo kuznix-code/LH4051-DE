@@ -12,9 +12,8 @@ void create_longhorn_panel(GtkApplication *app) {
     gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
     gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
 
-    // Give GTK a non-zero initial size; the left/right anchors determine width.
+    // Give GTK a non-zero initial height. The left/right anchors determine width.
     gtk_widget_set_size_request(window, 1, 40);
-    gtk_layer_set_size(gtk_win, 1, 40);
 
     // Reserve screen space.
     gtk_layer_auto_exclusive_zone_enable(gtk_win);
