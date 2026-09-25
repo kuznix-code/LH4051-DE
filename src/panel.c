@@ -1,26 +1,6 @@
 #include "longhorn.h"
-
-void create_longhorn_panel(GtkApplication *app) {
-    GtkWidget *window = gtk_application_window_new(app);
-    GtkWindow *gtk_win = GTK_WINDOW(window);
-
-    gtk_layer_init_for_window(gtk_win);
-    gtk_layer_set_layer(gtk_win, GTK_LAYER_SHELL_LAYER_TOP);
-
-    // Anchor to bottom, left, and right.
-    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
-    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
-    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
-
-    // Give GTK a non-zero initial height. The left/right anchors determine width.
-    gtk_widget_set_size_request(window, 1, 40);
-
-    // Reserve screen space.
-    gtk_layer_auto_exclusive_zone_enable(gtk_win);
-
-    // Apply styling.
-    gtk_widget_add_css_class(window, "lh-panel");
-    gtk_widget_add_css_class(window, "taskbar");
-
-    gtk_window_present(gtk_win);
-}
+static GtkWidget*clock_label;
+static gboolean update_clock(gpointer d){(void)d;if(!clock_label)return G_SOURCE_REMOVE;GDateTime*n=g_date_time_new_now_local();char*s=g_date_time_format(n,"%I:%M %p");gtk_label_set_text(GTK_LABEL(clock_label),s);g_free(s);g_date_time_unref(n);return G_SOURCE_CONTINUE;}
+static void start_clicked(GtkButton*b,gpointer d){(void)b;longhorn_toggle_start_menu(GTK_APPLICATION(d));}
+static void explorer_clicked(GtkButton*b,gpointer d){(void)b;create_file_explorer(GTK_APPLICATION(d),g_get_home_dir());}
+void create_longhorn_panel(GtkApplication*app){GtkWidget*w=gtk_application_window_new(app);GtkWindow*win=GTK_WINDOW(w);gtk_layer_init_for_window(win);gtk_layer_set_layer(win,GTK_LAYER_SHELL_LAYER_TOP);gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_BOTTOM,TRUE);gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_LEFT,TRUE);gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_RIGHT,TRUE);gtk_widget_set_size_request(w,1,LH4051_PANEL_HEIGHT);gtk_layer_auto_exclusive_zone_enable(win);GtkWidget*bar=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0);gtk_widget_add_css_class(bar,"lh-panel");gtk_window_set_child(win,bar);GtkWidget*start=gtk_button_new_with_label("⊞  start");gtk_widget_add_css_class(start,"lh-start");g_signal_connect(start,"clicked",G_CALLBACK(start_clicked),app);gtk_box_append(GTK_BOX(bar),start);GtkWidget*task=gtk_button_new_with_label("▣  My Documents");gtk_widget_add_css_class(task,"lh-task");g_signal_connect(task,"clicked",G_CALLBACK(explorer_clicked),app);gtk_box_append(GTK_BOX(bar),task);GtkWidget*sp=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0);gtk_widget_set_hexpand(sp,TRUE);gtk_box_append(GTK_BOX(bar),sp);GtkWidget*tray=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,2);gtk_widget_add_css_class(tray,"lh-tray");gtk_box_append(GTK_BOX(tray),gtk_button_new_with_label("‹"));gtk_box_append(GTK_BOX(tray),gtk_label_new("🔊"));gtk_box_append(GTK_BOX(tray),gtk_label_new("⌁"));clock_label=gtk_label_new("--:-- --");gtk_widget_add_css_class(clock_label,"lh-clock");gtk_box_append(GTK_BOX(tray),clock_label);gtk_box_append(GTK_BOX(bar),tray);update_clock(NULL);g_timeout_add_seconds(1,update_clock,NULL);gtk_window_present(win);}
