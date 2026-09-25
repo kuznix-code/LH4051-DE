@@ -38,11 +38,36 @@ static void show_message(GtkWindow *parent, const char *title, const char *messa
     gtk_alert_dialog_show(dialog, parent);
 }
 
-static void package_command(const char *action, const char *package)
+static void package_log(GtkWindow *parent, const char *action, const char *package, const char *pm)
+{
+    GtkWindow *w = GTK_WINDOW(gtk_window_new());
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *title = gtk_label_new(g_strcmp0(action, "install") == 0 ? "Installing application" : "Uninstalling application");
+    GtkWidget *text = gtk_label_new(NULL);
+    char *detail = g_strdup_printf("Package: %s\nPackage manager: %s\n\nThe package manager is running.\nAdministrator authentication may be requested.",
+                                    package ? package : "unknown", pm ? pm : "none");
+    gtk_label_set_text(GTK_LABEL(text), detail);
+    gtk_label_set_wrap(GTK_LABEL(text), TRUE);
+    gtk_widget_set_margin_top(box, 16);
+    gtk_widget_set_margin_bottom(box, 16);
+    gtk_widget_set_margin_start(box, 16);
+    gtk_widget_set_margin_end(box, 16);
+    gtk_box_append(GTK_BOX(box), title);
+    gtk_box_append(GTK_BOX(box), text);
+    gtk_window_set_title(w, "LH4051 App Store — Package Operation");
+    gtk_window_set_default_size(w, 420, 180);
+    gtk_window_set_transient_for(w, parent);
+    gtk_window_set_child(w, box);
+    gtk_window_present(w);
+    g_free(detail);
+}
+
+static void package_command(const char *action, const char *package, GtkWindow *parent)
 {
     if (!package || !*package) return;
 
     const char *pm = detect_package_manager();
+    package_log(parent, action, package, pm);
     if (!pm) return;
 
     const char *argv[6] = {0};
@@ -85,7 +110,8 @@ static void package_confirm_finished(GObject *source, GAsyncResult *result, gpoi
     int choice = gtk_alert_dialog_choose_finish(dialog, result, &error);
     if (!error && choice == 1)
         package_command(g_object_get_data(G_OBJECT(dialog), "lh-action-copy"),
-                        g_object_get_data(G_OBJECT(dialog), "lh-package-copy"));
+                        g_object_get_data(G_OBJECT(dialog), "lh-package-copy"),
+                        g_object_get_data(G_OBJECT(dialog), "lh-parent"));
     g_clear_error(&error);
     g_object_unref(dialog);
     (void)user_data;
@@ -109,6 +135,7 @@ static void confirm_package_action(GtkButton *button, gpointer data)
     gtk_alert_dialog_set_cancel_button(dialog, 0);
     g_object_set_data_full(G_OBJECT(dialog), "lh-action-copy", g_strdup(action), g_free);
     g_object_set_data_full(G_OBJECT(dialog), "lh-package-copy", g_strdup(package), g_free);
+    g_object_set_data(G_OBJECT(dialog), "lh-parent", parent);
     gtk_alert_dialog_choose(dialog, parent, NULL,
         (GAsyncReadyCallback)package_confirm_finished, NULL);
     g_free(title);
