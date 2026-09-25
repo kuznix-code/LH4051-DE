@@ -9,11 +9,11 @@ PKG_CONFIG ?= pkg-config
 # rather than a large shell case statement, avoiding shell quoting problems.
 HOST_OS := $(shell uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
 HOST_ARCH := $(shell uname -m 2>/dev/null)
-HOST_DISTRO := $(shell if [ -f /etc/os-release ]; then . /etc/os-release; printf '%s' "$ID"; fi)
-HOST_CPU_VENDOR := $(shell awk -F: '/^vendor_id[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
-HOST_CPU_FAMILY := $(shell awk -F: '/^cpu family[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
-HOST_CPU_MODEL := $(shell awk -F: '/^model[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
-HOST_CPU_FLAGS := $(shell awk -F: '/^flags[[:space:]]*:/ {sub(/^[[:space:]]*/, "", $2); print $2; exit}' /proc/cpuinfo 2>/dev/null)
+HOST_DISTRO := $(shell if [ -f /etc/os-release ]; then . /etc/os-release; printf '%s' "$$ID"; fi)
+HOST_CPU_VENDOR := $(shell awk -F: '/^vendor_id[[:space:]]*:/ {print $$2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+HOST_CPU_FAMILY := $(shell awk -F: '/^cpu family[[:space:]]*:/ {print $$2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+HOST_CPU_MODEL := $(shell awk -F: '/^model[[:space:]]*:/ {print $$2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+HOST_CPU_FLAGS := $(shell awk -F: '/^flags[[:space:]]*:/ {sub(/^[[:space:]]*/, "", $2); print $$2; exit}' /proc/cpuinfo 2>/dev/null)
 
 ifeq ($(HOST_OS),linux)
   ifeq ($(HOST_ARCH),x86_64)
