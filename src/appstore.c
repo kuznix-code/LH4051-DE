@@ -315,7 +315,7 @@ static void populate_installed_apps(GtkWidget *flow, GtkWindow *parent)
         info->id = g_strdup(g_app_info_get_id(ginfo));
         info->name = g_strdup(g_app_info_get_display_name(ginfo));
         info->summary = g_strdup(g_app_info_get_description(ginfo));
-        info->package = g_strdup(info->id);
+        info->package = NULL;
         GtkWidget *card = make_app_card(info, parent, TRUE);
         g_object_set_data_full(G_OBJECT(card), "lh-app-info", info, (GDestroyNotify)app_info_free);
         gtk_flow_box_insert(GTK_FLOW_BOX(flow), card, -1);
