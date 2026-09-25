@@ -5,9 +5,69 @@ PKG_CONFIG ?= pkg-config
 
 # Use TARGET=... to select a toolchain explicitly.
 # With no TARGET, detect the current host OS/CPU automatically.
-# Host target detection. Avoid a shell case statement here because Make expands
-# $(shell ...) before parsing the rest of the file. Keep the command simple.
-TARGET ?= $(shell uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+# Host target detection. Keep OS/distro/architecture detection in Make conditionals
+# rather than a large shell case statement, avoiding shell quoting problems.
+HOST_OS := $(shell uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
+HOST_ARCH := $(shell uname -m 2>/dev/null)
+HOST_DISTRO := $(shell if [ -f /etc/os-release ]; then . /etc/os-release; printf '%s' "$$ID"; fi)
+
+ifeq ($(HOST_OS),linux)
+  ifeq ($(HOST_ARCH),x86_64)
+    ifeq ($(HOST_DISTRO),cachyos)
+      DEFAULT_TARGET := linux-cachy
+    else ifeq ($(HOST_DISTRO),ubuntu)
+      DEFAULT_TARGET := linux-ubuntu-x86_64
+    else ifeq ($(HOST_DISTRO),debian)
+      DEFAULT_TARGET := linux-debian-x86_64
+    else ifeq ($(HOST_DISTRO),fedora)
+      DEFAULT_TARGET := linux-fedora-x86_64
+    else ifeq ($(HOST_DISTRO),arch)
+      DEFAULT_TARGET := linux-arch-x86_64
+    else
+      DEFAULT_TARGET := linux-generic-x86_64
+    endif
+  else ifeq ($(HOST_ARCH),aarch64)
+    DEFAULT_TARGET := linux-generic-aarch64
+  else ifneq (,$(filter $(HOST_ARCH),armv7l armv7))
+    DEFAULT_TARGET := linux-generic-armv7
+  else ifneq (,$(filter $(HOST_ARCH),armv6l armv6))
+    DEFAULT_TARGET := linux-generic-armv6
+  else ifneq (,$(filter $(HOST_ARCH),i386 i486 i586 i686))
+    DEFAULT_TARGET := linux-generic-i686
+  else ifeq ($(HOST_ARCH),riscv64)
+    DEFAULT_TARGET := linux-generic-riscv64
+  else ifeq ($(HOST_ARCH),ppc64le)
+    DEFAULT_TARGET := linux-generic-ppc64el
+  else ifeq ($(HOST_ARCH),ppc64)
+    DEFAULT_TARGET := linux-generic-ppc64
+  else ifeq ($(HOST_ARCH),s390x)
+    DEFAULT_TARGET := linux-generic-s390x
+  else ifneq (,$(filter mips mipsel mips64 mips64el,$(HOST_ARCH)))
+    DEFAULT_TARGET := linux-generic-mips
+  else
+    DEFAULT_TARGET := generic
+  endif
+else ifeq ($(HOST_OS),darwin)
+  ifneq (,$(filter $(HOST_ARCH),x86_64 amd64))
+    DEFAULT_TARGET := darwin-x86_64
+  else ifeq ($(HOST_ARCH),arm64)
+    DEFAULT_TARGET := darwin-aarch64
+  else
+    DEFAULT_TARGET := generic
+  endif
+else ifeq ($(HOST_OS),freebsd)
+  ifneq (,$(filter $(HOST_ARCH),x86_64 amd64))
+    DEFAULT_TARGET := freebsd-x86_64
+  else ifneq (,$(filter $(HOST_ARCH),aarch64 arm64))
+    DEFAULT_TARGET := freebsd-aarch64
+  else
+    DEFAULT_TARGET := generic
+  endif
+else
+  DEFAULT_TARGET := generic
+endif
+
+TARGET ?= $(DEFAULT_TARGET)
 
 RESET := \033[0m
 CYAN := \033[1;36m
