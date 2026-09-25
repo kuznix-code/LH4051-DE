@@ -61,12 +61,14 @@ void create_start_menu(GtkApplication *app){
     gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_BOTTOM,TRUE); gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_LEFT,TRUE);
     gtk_layer_set_margin(win,GTK_LAYER_SHELL_EDGE_BOTTOM,LH4051_PANEL_HEIGHT);
     gtk_layer_set_keyboard_mode(win,GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+    gtk_layer_set_namespace(win,"lh4051-start-menu");
+    gtk_widget_set_visible(w,TRUE);
     gtk_window_set_default_size(win,760,540);
     root=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0); gtk_widget_add_css_class(root,"lh-start-menu"); gtk_window_set_child(win,root);
 
     left=gtk_box_new(GTK_ORIENTATION_VERTICAL,4); gtk_widget_set_size_request(left,340,-1); gtk_widget_add_css_class(left,"lh-start-left");
     GtkWidget *header=gtk_label_new("◉  LH4051"); gtk_widget_add_css_class(header,"lh-start-header"); gtk_label_set_xalign(GTK_LABEL(header),0); gtk_box_append(GTK_BOX(left),header);
-    GtkWidget *search=gtk_search_entry_new(); gtk_widget_add_css_class(search,"lh-start-search"); gtk_entry_set_placeholder_text(GTK_ENTRY(search),"Search apps"); gtk_box_append(GTK_BOX(left),search);
+    GtkWidget *search=gtk_search_entry_new(); gtk_widget_add_css_class(search,"lh-start-search"); gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(search),"Search apps"); gtk_box_append(GTK_BOX(left),search);
     gtk_box_append(GTK_BOX(left),start_button("📁  My Documents",G_CALLBACK(open_home),app));
     gtk_box_append(GTK_BOX(left),start_button("⚙  LH4051 Settings",G_CALLBACK(open_settings),app));
     gtk_box_append(GTK_BOX(left),start_button("🛍  LH4051 App Store",G_CALLBACK(open_store),app));
