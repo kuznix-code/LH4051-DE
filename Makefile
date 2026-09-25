@@ -129,7 +129,7 @@ RED := \033[1;31m
 MAGENTA := \033[1;35m
 DIM := \033[2m
 
-GTK_CFLAGS := $(shell $(PKG_CONFIG) --cflags gtk4 gtk4-layer-shell-0 2>/dev/null)
+GTK_CFLAGS := $(shell $(PKG_CONFIG) --cflags gtk4 gtk4-layer-shell-0 gio-unix-2.0 2>/dev/null)
 GTK_LIBS := $(shell $(PKG_CONFIG) --libs gtk4 gtk4-layer-shell-0 2>/dev/null)
 
 # Target -> compiler/architecture mapping.
@@ -333,7 +333,7 @@ LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
 -Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
 LTOFLAGS := -flto=auto
 
-CORE_SRC := src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/explorer.c
+CORE_SRC := src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/settings.c src/appstore.c src/explorer.c
 CORE_OBJDIR := build/core
 CORE_OBJ := $(patsubst src/%.c,$(CORE_OBJDIR)/%.o,$(CORE_SRC))
 WM_OBJ := src/LH4051-WM/build/wm.o
