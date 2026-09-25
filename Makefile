@@ -172,9 +172,9 @@ linux-ubuntu-riscv64 linux-debian-riscv64 linux-fedora-riscv64 linux-arch-riscv6
 WINDOWS_TARGETS := win7-x86_64 win8-x86_64 win8.1-x86_64 win10-x86_64 win11-x86_64 win7-i686 win8-i686 win8.1-i686 win10-i686 win8-aarch64 win8.1-aarch64 win10-aarch64 win11-aarch64 win8-armv7 win8.1-armv7 win10-armv7
 DARWIN_TARGETS := darwin-x86_64 darwin-i686 darwin-aarch64 darwin-ppc64 darwin-ppc
 FREEBSD_TARGETS := freebsd-x86_64 freebsd-aarch64 freebsd-i686
-GENERIC_TARGETS := generic
+GENERIC_TARGETS := generic generic-x86_64 generic-aarch64 generic-armv7 generic-armv6 generic-i686 generic-mips generic-mipsel generic-mips64 generic-mips64el generic-ppc generic-ppc64 generic-ppc64el generic-s390x generic-riscv32 generic-riscv64 generic-loong64\nNETBSD_TARGETS := netbsd-x86_64 netbsd-aarch64 netbsd-i686\nOPENBSD_TARGETS := openbsd-x86_64 openbsd-aarch64 openbsd-i686\nDRAGONFLY_TARGETS := dragonfly-x86_64
 
-TARGETS := $(LINUX_TARGETS) $(WINDOWS_TARGETS) $(DARWIN_TARGETS) $(FREEBSD_TARGETS) $(GENERIC_TARGETS)
+TARGETS := $(LINUX_TARGETS) $(WINDOWS_TARGETS) $(DARWIN_TARGETS) $(FREEBSD_TARGETS) $(NETBSD_TARGETS) $(OPENBSD_TARGETS) $(DRAGONFLY_TARGETS) $(GENERIC_TARGETS)
 
 # Default build uses the selected target.
 CC_SELECTED := $(or $(TARGET_CC_$(TARGET)),$(CC))
