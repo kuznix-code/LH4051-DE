@@ -406,7 +406,9 @@ help:
 	@printf "$(CYAN)LH4051-DE $(VERSION)$(RESET)\n"
 	@printf "  Default target: $(GREEN)$(TARGET)$(RESET) (auto-detected)\n"
 	@printf "  Build:          $(GREEN)make$(RESET) or $(GREEN)make TARGET=<target>$(RESET)\n"
-	@printf "  Inspect:         $(GREEN)make show-target$(RESET)\n	@printf "  CPU build:      $(GREEN)make cpu-build CPU=skylake$(RESET)\n"\n"
+	@printf "  Inspect:         $(GREEN)make show-target$(RESET)\n"
+	@printf "  CPU build:       $(GREEN)make cpu-build CPU=skylake$(RESET)\n"
+
 	@printf "  Run:             $(GREEN)make run$(RESET)\n"
 	@printf "  Clean:           $(GREEN)make clean$(RESET)\n"
 	@printf "  Linux targets:  %s\n" "$(LINUX_TARGETS)"
