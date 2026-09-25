@@ -18,10 +18,20 @@ HOST_CPU_FLAGS := $(shell awk -F: '/^flags[[:space:]]*:/ {sub(/^[[:space:]]*/, "
 ifeq ($(HOST_OS),linux)
   ifeq ($(HOST_ARCH),x86_64)
     ifeq ($(HOST_DISTRO),cachyos)
-      ifneq (,$(findstring avx512f,$(HOST_CPU_FLAGS)))
+      ifneq (,$(filter avx512f avx512bw avx512cd avx512dq avx512vl,$(HOST_CPU_FLAGS)))
         DEFAULT_TARGET := linux-cachy-v4
+      else ifneq (,$(filter-out avx avx2 bmi bmi2 f16c fma lzcnt movbe,$(HOST_CPU_FLAGS)))
+        ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
+          DEFAULT_TARGET := linux-cachy-v3
+        else ifneq (,$(findstring avx,$(HOST_CPU_FLAGS)))
+          DEFAULT_TARGET := linux-cachy-v2
+        else
+          DEFAULT_TARGET := linux-cachy
+        endif
       else ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
         DEFAULT_TARGET := linux-cachy-v3
+      else ifneq (,$(findstring avx,$(HOST_CPU_FLAGS)))
+        DEFAULT_TARGET := linux-cachy-v2
       else
         DEFAULT_TARGET := linux-cachy
       endif
@@ -123,6 +133,9 @@ TARGET_CC_linux-generic-x86_64v2 := gcc
 TARGET_CC_linux-generic-x86_64v3 := gcc
 TARGET_CC_linux-generic-x86_64v4 := gcc
 TARGET_CC_linux-cachy := gcc
+TARGET_CC_linux-cachy-v2 := gcc
+TARGET_CC_linux-cachy-v3 := gcc
+TARGET_CC_linux-cachy-v4 := gcc
 TARGET_CC_linux-ubuntu-x86_64 := x86_64-linux-gnu-gcc
 TARGET_CC_linux-ubuntu-x86_64v3 := x86_64-linux-gnu-gcc
 TARGET_CC_linux-debian-x86_64 := x86_64-linux-gnu-gcc
@@ -250,8 +263,7 @@ TARGET_CFLAGS_linux-generic-x86_64v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-generic-x86_64v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-generic-x86_64v4 := -march=x86-64-v4
 TARGET_CFLAGS_linux-cachy := -march=x86-64
-TARGET_CC_linux-cachy-v3 := gcc
-TARGET_CC_linux-cachy-v4 := gcc
+TARGET_CFLAGS_linux-cachy-v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-cachy-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-cachy-v4 := -march=x86-64-v4
 TARGET_CC_linux-cachy-excavator := gcc
@@ -284,7 +296,7 @@ $(foreach cpu,$(X86_CPU_CODENAMES),$(eval $(call cachy_cpu_target_rules,$(cpu)))
 
 LINUX_TARGETS := \
 linux-generic-x86_64 linux-generic-x86_64v2 linux-generic-x86_64v3 linux-generic-x86_64v4 \
-linux-cachy linux-cachy-v3 linux-cachy-v4 linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
+linux-cachy linux-cachy-v2 linux-cachy-v3 linux-cachy-v4 linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
 linux-alhp-v2 linux-alhp-v3 linux-alhp-v4 linux-generic-aarch64 linux-ubuntu-aarch64 linux-debian-aarch64 linux-fedora-aarch64 linux-arch-aarch64 \
 linux-generic-armv7 linux-ubuntu-armv7 linux-debian-armv7 linux-arch-armv7 linux-generic-armv6 linux-debian-armv6 linux-generic-armv5 linux-generic-armv4 \
 linux-generic-i486 linux-generic-i586 linux-generic-i686 linux-generic-i386 linux-arch-i486 linux-arch-i686 linux-debian-i686 \
@@ -308,9 +320,14 @@ TARGETS := $(LINUX_TARGETS) $(WINDOWS_TARGETS) $(DARWIN_TARGETS) $(FREEBSD_TARGE
 CC_SELECTED := $(or $(TARGET_CC_$(TARGET)),$(CC))
 TARGET_CFLAGS := $(TARGET_CFLAGS_$(TARGET))
 
-BASE_CFLAGS := -Wall -Wextra -O3 -pipe -DVERSION=\"$(VERSION)\"
+BASE_CFLAGS := -Wall -Wextra -O3 -pipe -fno-plt -fexceptions \
+-Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
+-fstack-clash-protection -fcf-protection -DVERSION=\"$(VERSION)\"
 CFLAGS := $(BASE_CFLAGS) $(TARGET_CFLAGS) $(GTK_CFLAGS) -Isrc
-LDFLAGS := $(GTK_LIBS) -lm
+CXXFLAGS := $(CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
+LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
+-Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
+LTOFLAGS := -flto=auto
 
 CORE_SRC := src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/explorer.c
 CORE_OBJDIR := build/core
@@ -321,11 +338,24 @@ SESSION_OBJ := src/LH4051-SESSION/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
-.PHONY: all build clean run help show-target subprojects wm fm session $(TARGETS)
+.PHONY: all build clean run help show-target cpu-build subprojects wm fm session $(TARGETS)
 
 all: $(TARGET_BIN)
 
 build: all
+
+cpu-build:
+	@if [ -z "$(CPU)" ]; then \
+		printf "$(RED)Usage: make cpu-build CPU=<cpu-codename>$(RESET)\n"; \
+		printf "Example: make cpu-build CPU=skylake\n"; \
+		exit 2; \
+	fi
+	@if ! printf "%s\n" "$(X86_CPU_CODENAMES)" | tr " " "\n" | grep -Fxq "$(CPU)"; then \
+		printf "$(RED)Unknown CPU target: %s$(RESET)\n" "$(CPU)"; \
+		printf "Supported CPU targets: %s\n" "$(X86_CPU_CODENAMES)"; \
+		exit 2; \
+	fi
+	@$(MAKE) --no-print-directory TARGET="linux-cachy-$(CPU)" all
 
 show-target:
 	@printf "$(CYAN)LH4051-DE target:$(RESET) $(GREEN)%s$(RESET)\n" "$(TARGET)"
@@ -372,7 +402,7 @@ help:
 	@printf "$(CYAN)LH4051-DE $(VERSION)$(RESET)\n"
 	@printf "  Default target: $(GREEN)$(TARGET)$(RESET) (auto-detected)\n"
 	@printf "  Build:          $(GREEN)make$(RESET) or $(GREEN)make TARGET=<target>$(RESET)\n"
-	@printf "  Inspect:         $(GREEN)make show-target$(RESET)\n"
+	@printf "  Inspect:         $(GREEN)make show-target$(RESET)\n	@printf "  CPU build:      $(GREEN)make cpu-build CPU=skylake$(RESET)\n"\n"
 	@printf "  Run:             $(GREEN)make run$(RESET)\n"
 	@printf "  Clean:           $(GREEN)make clean$(RESET)\n"
 	@printf "  Linux targets:  %s\n" "$(LINUX_TARGETS)"
