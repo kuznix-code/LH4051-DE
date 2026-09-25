@@ -1,6 +1,12 @@
 #include "session.h"
 #include "../LH4051-WM/wm.h"
 #include "../longhorn.h"
+#ifdef GDK_WINDOWING_X11
+#include <gdk/x11/gdkx.h>
+#endif
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/wayland/gdkwayland.h>
+#endif
 
 static GtkApplication *session_app;
 static gboolean session_wayland;
