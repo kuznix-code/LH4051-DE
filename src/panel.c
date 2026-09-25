@@ -1,8 +1,7 @@
 #include "longhorn.h"
-#include "LH4051-WM.h"
+#include "LH4051-WM/wm.h"
 static GtkWidget *clock_label;
 static GtkWidget *task_box;
-static GtkApplication *panel_app;
 
 static gboolean update_clock(gpointer d){
     (void)d;
@@ -35,7 +34,6 @@ static void start_clicked(GtkButton*b,gpointer d){(void)b;longhorn_toggle_start_
 static void explorer_clicked(GtkButton*b,gpointer d){(void)b;create_file_explorer(GTK_APPLICATION(d),g_get_home_dir());}
 
 void create_longhorn_panel(GtkApplication*app){
-    panel_app=app;
     GtkWidget*w=gtk_application_window_new(app); GtkWindow*win=GTK_WINDOW(w);
     gtk_layer_init_for_window(win);
     gtk_layer_set_layer(win,GTK_LAYER_SHELL_LAYER_TOP);
