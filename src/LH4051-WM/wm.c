@@ -11,7 +11,9 @@ static void ensure_store(void){ if(!windows) windows=g_ptr_array_new_with_free_f
 void lh4051_wm_init(void){ ensure_store(); }
 void lh4051_wm_shutdown(void){ if(windows){g_ptr_array_unref(windows);windows=NULL;} }
 void lh4051_wm_register(GtkWindow *window,const char *title){
-    if (!window)\n        return;\n    ensure_store();
+    if (!window)
+        return;
+    ensure_store();
     for(guint i=0;i<windows->len;i++){LHWindow *x=g_ptr_array_index(windows,i);if(x->window==window){lh4051_wm_set_title(window,title);return;}}
     LHWindow *x=g_new0(LHWindow,1); x->window=window; x->title=g_strdup(title?title:"LH4051 Window");
     g_ptr_array_add(windows,x); emit_changed();
