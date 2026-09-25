@@ -1,5 +1,6 @@
 #include "longhorn.h"
-#include "shell.h"
+#include "LH4051-SESSION.h"
+
 void load_shell_css(void) {
     GtkCssProvider *provider=gtk_css_provider_new();
     gtk_css_provider_load_from_string(provider,
@@ -23,15 +24,21 @@ void load_shell_css(void) {
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),GTK_STYLE_PROVIDER(provider),GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
 }
+
 static void on_activate(GtkApplication *app,gpointer user_data){
     (void)user_data;
-    g_print("Starting LH4051-DE 0.0.0 with integrated subprojects...\n");
+    g_print("Starting LH4051-DE %s session...\n",LH4051_VERSION);
     load_shell_css();
-    lh4051_shell_start(app);
+    lh4051_session_start(app);
+}
+static void on_shutdown(GApplication *app,gpointer user_data){
+    (void)app; (void)user_data;
+    lh4051_session_stop();
 }
 int main(int argc,char*argv[]){
     GtkApplication*app=gtk_application_new("org.kuznix.lh4051de",G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(app,"activate",G_CALLBACK(on_activate),NULL);
+    g_signal_connect(app,"shutdown",G_CALLBACK(on_shutdown),NULL);
     int status=g_application_run(G_APPLICATION(app),argc,argv);
     g_object_unref(app);
     return status;
