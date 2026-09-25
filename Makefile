@@ -398,14 +398,10 @@ clean:
 	@$(MAKE) --no-print-directory -C src/LH4051-FM clean
 	@$(MAKE) --no-print-directory -C src/LH4051-SESSION clean
 
-wallpaper:
 	@mkdir -p images
 	@if command -v magick >/dev/null 2>&1; then \
-		magick "$$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \
 	elif command -v convert >/dev/null 2>&1; then \
-		convert "$$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \
 	else \
-		printf "%s\n" "ImageMagick (magick/convert) is required to convert the wallpaper."; exit 1; \
 	fi
 
 run: all
