@@ -1,29 +1,6 @@
 #include "longhorn.h"
-
-void create_longhorn_sidebar(GtkApplication *app) {
-    GtkWidget *window = gtk_application_window_new(app);
-    GtkWindow *gtk_win = GTK_WINDOW(window);
-
-    gtk_layer_init_for_window(gtk_win);
-    gtk_layer_set_layer(gtk_win, GTK_LAYER_SHELL_LAYER_TOP);
-
-    // Anchor to right, top, and bottom.
-    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
-    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-    gtk_layer_set_anchor(gtk_win, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
-
-    // Keep the sidebar below the 40px taskbar.
-    gtk_layer_set_margin(gtk_win, GTK_LAYER_SHELL_EDGE_BOTTOM, 40);
-
-    // Give GTK a non-zero initial width. The top/bottom anchors determine height.
-    gtk_widget_set_size_request(window, 220, 1);
-
-    // Reserve screen space.
-    gtk_layer_auto_exclusive_zone_enable(gtk_win);
-
-    // Apply styling.
-    gtk_widget_add_css_class(window, "lh-panel");
-    gtk_widget_add_css_class(window, "sidebar");
-
-    gtk_window_present(gtk_win);
-}
+#include <math.h>
+static void draw_clock(GtkDrawingArea*a,cairo_t*cr,int w,int h,gpointer d){(void)a;(void)d;double cx=w/2.0,cy=h/2.0,r=MIN(w,h)*.42;cairo_set_source_rgb(cr,.88,.90,.91);cairo_arc(cr,cx,cy,r,0,2*G_PI);cairo_fill_preserve(cr);cairo_set_source_rgb(cr,.18,.23,.27);cairo_set_line_width(cr,2);cairo_stroke(cr);GDateTime*n=g_date_time_new_now_local();double hr=g_date_time_get_hour(n)%12,mi=g_date_time_get_minute(n),se=g_date_time_get_second(n);double an[]={((hr+mi/60)*G_PI/6)-G_PI/2,(mi*G_PI/30)-G_PI/2,(se*G_PI/30)-G_PI/2};double le[]={r*.52,r*.76,r*.84};double wi[]={4,2.5,1};for(int i=0;i<3;i++){cairo_move_to(cr,cx,cy);cairo_line_to(cr,cx+cos(an[i])*le[i],cy+sin(an[i])*le[i]);cairo_set_line_width(cr,wi[i]);cairo_stroke(cr);}g_date_time_unref(n);}
+static gboolean update_clock(gpointer d){GtkLabel*l=GTK_LABEL(d);GDateTime*n=g_date_time_new_now_local();char*s=g_date_time_format(n,"%I:%M %p\n%A, %b %d");gtk_label_set_text(l,s);g_free(s);g_date_time_unref(n);return G_SOURCE_CONTINUE;}
+static void close_sidebar(GtkButton*b,gpointer d){(void)b;gtk_window_destroy(GTK_WINDOW(d));}
+void create_longhorn_sidebar(GtkApplication*app){GtkWidget*w=gtk_application_window_new(app);GtkWindow*win=GTK_WINDOW(w);gtk_layer_init_for_window(win);gtk_layer_set_layer(win,GTK_LAYER_SHELL_LAYER_TOP);gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_RIGHT,TRUE);gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_TOP,TRUE);gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_BOTTOM,TRUE);gtk_layer_set_margin(win,GTK_LAYER_SHELL_EDGE_BOTTOM,LH4051_PANEL_HEIGHT);gtk_widget_set_size_request(w,LH4051_SIDEBAR_WIDTH,1);gtk_layer_auto_exclusive_zone_enable(win);GtkWidget*r=gtk_box_new(GTK_ORIENTATION_VERTICAL,0);gtk_widget_add_css_class(r,"lh-sidebar");gtk_window_set_child(win,r);GtkWidget*h=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);gtk_widget_add_css_class(h,"lh-tile");GtkWidget*t=gtk_label_new("Longhorn Sidebar");gtk_widget_add_css_class(t,"lh-tile-title");gtk_widget_set_hexpand(t,TRUE);gtk_label_set_xalign(GTK_LABEL(t),0);gtk_box_append(GTK_BOX(h),t);gtk_box_append(GTK_BOX(h),gtk_button_new_with_label("—"));GtkWidget*c=gtk_button_new_with_label("×");gtk_box_append(GTK_BOX(h),c);gtk_box_append(GTK_BOX(r),h);g_signal_connect(c,"clicked",G_CALLBACK(close_sidebar),w);GtkWidget*tile=gtk_box_new(GTK_ORIENTATION_VERTICAL,5);gtk_widget_add_css_class(tile,"lh-tile");GtkWidget*clock=gtk_drawing_area_new();gtk_widget_set_size_request(clock,220,170);gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(clock),draw_clock,NULL,NULL);gtk_box_append(GTK_BOX(tile),clock);GtkWidget*digital=gtk_label_new("");gtk_widget_add_css_class(digital,"lh-digital");gtk_box_append(GTK_BOX(tile),digital);gtk_box_append(GTK_BOX(r),tile);update_clock(digital);g_timeout_add_seconds(1,update_clock,digital);GtkWidget*widgets=gtk_label_new("Widgets\n\nWeather\nCalendar\nSystem status\nMedia controls");gtk_widget_add_css_class(widgets,"lh-tile");gtk_widget_set_vexpand(widgets,TRUE);gtk_label_set_xalign(GTK_LABEL(widgets),0);gtk_box_append(GTK_BOX(r),widgets);gtk_box_append(GTK_BOX(r),gtk_button_new_with_label("⌄  Collapse Sidebar"));gtk_window_present(win);}
