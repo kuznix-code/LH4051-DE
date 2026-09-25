@@ -18,15 +18,23 @@ HOST_CPU_FLAGS := $(shell awk -F: '/^flags[[:space:]]*:/ {sub(/^[[:space:]]*/, "
 ifeq ($(HOST_OS),linux)
   ifeq ($(HOST_ARCH),x86_64)
     ifeq ($(HOST_DISTRO),cachyos)
-      ifneq (,$(filter avx512f avx512bw avx512cd avx512dq avx512vl,$(HOST_CPU_FLAGS)))
-        DEFAULT_TARGET := linux-cachy-v4
-      else ifneq (,$(filter-out avx avx2 bmi bmi2 f16c fma lzcnt movbe,$(HOST_CPU_FLAGS)))
-        ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
-          DEFAULT_TARGET := linux-cachy-v3
-        else ifneq (,$(findstring avx,$(HOST_CPU_FLAGS)))
-          DEFAULT_TARGET := linux-cachy-v2
+      ifneq (,$(findstring avx512f,$(HOST_CPU_FLAGS)))
+        ifneq (,$(findstring avx512bw,$(HOST_CPU_FLAGS)))
+          ifneq (,$(findstring avx512cd,$(HOST_CPU_FLAGS)))
+            ifneq (,$(findstring avx512dq,$(HOST_CPU_FLAGS)))
+              ifneq (,$(findstring avx512vl,$(HOST_CPU_FLAGS)))
+                DEFAULT_TARGET := linux-cachy-v4
+              else
+                DEFAULT_TARGET := linux-cachy-v3
+              endif
+            else
+              DEFAULT_TARGET := linux-cachy-v3
+            endif
+          else
+            DEFAULT_TARGET := linux-cachy-v3
+          endif
         else
-          DEFAULT_TARGET := linux-cachy
+          DEFAULT_TARGET := linux-cachy-v3
         endif
       else ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
         DEFAULT_TARGET := linux-cachy-v3
