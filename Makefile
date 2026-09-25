@@ -399,14 +399,14 @@ clean:
 	@$(MAKE) --no-print-directory -C src/LH4051-SESSION clean
 
 wallpaper:
-t@mkdir -p images
-t@if command -v magick >/dev/null 2>&1; then \\
-t\tmagick "$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \\
-telif command -v convert >/dev/null 2>&1; then \\
-t\tconvert "$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \\
-telse \\
-t\tprintf "%s\\n" "ImageMagick (magick/convert) is required to convert the wallpaper."; exit 1; \\
-tfi
+	@mkdir -p images
+	@if command -v magick >/dev/null 2>&1; then \
+		magick "$$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \
+	elif command -v convert >/dev/null 2>&1; then \
+		convert "$$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \
+	else \
+		printf "%s\n" "ImageMagick (magick/convert) is required to convert the wallpaper."; exit 1; \
+	fi
 
 run: all
 	@printf "$(GREEN)==> Running LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
