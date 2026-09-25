@@ -155,6 +155,10 @@ TARGET_CFLAGS_linux-generic-x86_64v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-generic-x86_64v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-generic-x86_64v4 := -march=x86-64-v4
 TARGET_CFLAGS_linux-cachy := -march=x86-64
+TARGET_CC_linux-cachy-v3 := gcc
+TARGET_CC_linux-cachy-v4 := gcc
+TARGET_CFLAGS_linux-cachy-v3 := -march=x86-64-v3
+TARGET_CFLAGS_linux-cachy-v4 := -march=x86-64-v4
 TARGET_CFLAGS_linux-alhp-v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-alhp-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-alhp-v4 := -march=x86-64-v4
@@ -167,7 +171,7 @@ TARGET_CFLAGS_linux-arch-i486 := -march=i486
 TARGET_CFLAGS_linux-arch-i686 := -march=i686
 
 # Known CPU-name aliases. GCC/Clang decides whether a CPU name is valid.
-X86_CPU_CODENAMES := bonnell silvermont goldmont goldmont-plus tremont gracemont sandybridge ivybridge haswell broadwell skylake skylake-avx512 cannonlake icelake-client tigerlake alderlake raptorlake meteorlake arrowlake znver1 znver2 znver3 znver4 znver5 znver6
+X86_CPU_CODENAMES := bonnell silvermont goldmont goldmont-plus tremont gracemont sandybridge ivybridge haswell broadwell skylake skylake-avx512 cannonlake icelake-client tigerlake alderlake raptorlake meteorlake arrowlake sierraforest grandridge granite-rapids emeraldrapids diamond-rapids clearwaterforest znver1 znver2 znver3 znver4 znver5 znver6
 
 define cpu_target_rules
 TARGET_CC_linux-generic-x86_64-$(1) := gcc
@@ -175,9 +179,15 @@ TARGET_CFLAGS_linux-generic-x86_64-$(1) := -march=$(1)
 endef
 $(foreach cpu,$(X86_CPU_CODENAMES),$(eval $(call cpu_target_rules,$(cpu))))
 
+define cachy_cpu_target_rules
+TARGET_CC_linux-cachy-$(1) := gcc
+TARGET_CFLAGS_linux-cachy-$(1) := -march=$(1)
+endef
+$(foreach cpu,$(X86_CPU_CODENAMES),$(eval $(call cachy_cpu_target_rules,$(cpu))))
+
 LINUX_TARGETS := \
 linux-generic-x86_64 linux-generic-x86_64v2 linux-generic-x86_64v3 linux-generic-x86_64v4 \
-linux-cachy linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
+linux-cachy linux-cachy-v3 linux-cachy-v4 linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
 linux-alhp-v2 linux-alhp-v3 linux-alhp-v4 linux-generic-aarch64 linux-ubuntu-aarch64 linux-debian-aarch64 linux-fedora-aarch64 linux-arch-aarch64 \
 linux-generic-armv7 linux-ubuntu-armv7 linux-debian-armv7 linux-arch-armv7 linux-generic-armv6 linux-debian-armv6 linux-generic-armv5 linux-generic-armv4 \
 linux-generic-i486 linux-generic-i586 linux-generic-i686 linux-generic-i386 linux-arch-i486 linux-arch-i686 linux-debian-i686 \
