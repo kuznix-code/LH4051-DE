@@ -3,10 +3,10 @@
 #include <gio/gdesktopappinfo.h>
 #endif
 
-static void close_store(GtkButton *b, gpointer d)
+static void close_store(GtkButton *button, gpointer data)
 {
-    (void)b;
-    gtk_window_destroy(GTK_WINDOW(d));
+    (void)button;
+    gtk_window_destroy(GTK_WINDOW(data));
 }
 
 static void append_text(GtkTextBuffer *buffer, const char *text)
@@ -28,37 +28,59 @@ static void launch_store_app(GtkButton *button, gpointer data)
         return;
 
     if (!g_app_info_launch(info, NULL, NULL, &error)) {
-        g_warning("LH4051 App Store: %s", error ? error->message : "application launch failed");
+        g_warning("LH4051 App Store: %s",
+                  error ? error->message : "application launch failed");
         g_clear_error(&error);
     }
     g_object_unref(info);
 }
-
 #endif
 
-static void populate_installed_apps(GtkWidget *box)
+static GtkWidget *make_app_card(GAppInfo *info)
+{
+    const char *name = g_app_info_get_display_name(info);
+    const char *id = g_app_info_get_id(info);
+    GtkWidget *button = gtk_button_new();
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *icon = gtk_image_new_from_gicon(g_app_info_get_icon(info));
+
+    gtk_widget_add_css_class(button, "lh-store-app-card");
+    gtk_widget_add_css_class(box, "lh-store-app-card-content");
+    gtk_widget_add_css_class(icon, "lh-store-app-icon");
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 48);
+
+    gtk_box_append(GTK_BOX(box), icon);
+    gtk_box_append(GTK_BOX(box), gtk_label_new(name ? name : "Application"));
+    gtk_button_set_child(GTK_BUTTON(button), box);
+
+#ifdef G_OS_UNIX
+    if (id)
+        g_object_set_data_full(G_OBJECT(button), "lh-app-id", g_strdup(id), g_free);
+    g_signal_connect(button, "clicked", G_CALLBACK(launch_store_app), NULL);
+#endif
+    return button;
+}
+
+static void populate_installed_apps(GtkWidget *flow)
 {
 #ifdef G_OS_UNIX
     GList *apps = g_app_info_get_all();
 
     for (GList *l = apps; l; l = l->next) {
         GAppInfo *info = l->data;
-        const char *name = g_app_info_get_display_name(info);
-        const char *id = g_app_info_get_id(info);
-
-        if (!g_app_info_should_show(info) || !name || !id)
+        if (!g_app_info_should_show(info) ||
+            !g_app_info_get_display_name(info) ||
+            !g_app_info_get_id(info))
             continue;
 
-        GtkWidget *button = gtk_button_new_with_label(name);
-        gtk_widget_add_css_class(button, "lh-store-app");
-        g_object_set_data_full(G_OBJECT(button), "lh-app-id", g_strdup(id), g_free);
-        g_signal_connect(button, "clicked", G_CALLBACK(launch_store_app), NULL);
-        gtk_box_append(GTK_BOX(box), button);
+        gtk_flow_box_insert(GTK_FLOW_BOX(flow), make_app_card(info), -1);
     }
 
     g_list_free_full(apps, g_object_unref);
 #else
-    gtk_box_append(GTK_BOX(box), gtk_label_new("Installed application discovery is unavailable on this platform."));
+    gtk_flow_box_insert(GTK_FLOW_BOX(flow),
+        gtk_label_new("Installed application discovery is unavailable on this platform."),
+        -1);
 #endif
 }
 
@@ -72,17 +94,19 @@ static void search_store(GtkButton *button, gpointer data)
     gtk_text_buffer_set_text(buffer, "", -1);
 
     if (!query || !*query) {
-        append_text(buffer, "Enter an application or package name.");
+        append_text(buffer, "Type an application or package name to search.");
         return;
     }
 
-    append_text(buffer, "== AppStream ==\n");
+    append_text(buffer, "AppStream results\n\n");
 
     {
         const gchar *argv[] = {"appstreamcli", "search", query, NULL};
         GError *error = NULL;
-        GSubprocess *process = g_subprocess_newv(argv,
-            G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error);
+        GSubprocess *process = g_subprocess_newv(
+            argv,
+            G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE,
+            &error);
 
         if (process) {
             gchar *out = NULL;
@@ -91,7 +115,7 @@ static void search_store(GtkButton *button, gpointer data)
                 out && *out)
                 append_text(buffer, out);
             else
-                append_text(buffer, "AppStream metadata search returned no results or appstreamcli is unavailable.\n");
+                append_text(buffer, "No AppStream results or appstreamcli is unavailable.\n");
             g_free(out);
             g_free(err);
             g_object_unref(process);
@@ -102,13 +126,15 @@ static void search_store(GtkButton *button, gpointer data)
         }
     }
 
-    append_text(buffer, "\n== PackageKit ==\n");
+    append_text(buffer, "\nPackageKit results\n\n");
 
     {
         const gchar *argv[] = {"pkcon", "search", "name", query, NULL};
         GError *error = NULL;
-        GSubprocess *process = g_subprocess_newv(argv,
-            G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error);
+        GSubprocess *process = g_subprocess_newv(
+            argv,
+            G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE,
+            &error);
 
         if (!process) {
             append_text(buffer, error ? error->message : "PackageKit is unavailable.");
@@ -137,62 +163,113 @@ static void search_store(GtkButton *button, gpointer data)
 
 void create_lh4051_appstore(GtkApplication *app)
 {
-    GtkWidget *w = gtk_application_window_new(app);
-    GtkWindow *win = GTK_WINDOW(w);
-    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *window_widget = gtk_application_window_new(app);
+    GtkWindow *win = GTK_WINDOW(window_widget);
+    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *header;
+    GtkWidget *content;
+    GtkWidget *search_row;
+    GtkWidget *entry;
+    GtkWidget *search;
+    GtkWidget *results_scroll;
+    GtkWidget *results;
+    GtkWidget *apps_scroll;
+    GtkWidget *apps;
 
     gtk_window_set_title(win, "LH4051 App Store");
-    gtk_window_set_default_size(win, 900, 680);
+    gtk_window_set_default_size(win, 1000, 720);
     gtk_widget_add_css_class(root, "lh-store");
     gtk_window_set_child(win, root);
 
-    GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_widget_add_css_class(bar, "lh-titlebar");
-    GtkWidget *title = gtk_label_new("LH4051 App Store · AppStream + PackageKit");
-    gtk_widget_set_hexpand(title, TRUE);
-    gtk_label_set_xalign(GTK_LABEL(title), 0);
-    gtk_box_append(GTK_BOX(bar), title);
+    header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_widget_add_css_class(header, "lh-store-header");
 
-    GtkWidget *close = gtk_button_new_with_label("✕");
-    gtk_widget_add_css_class(close, "lh-close");
-    g_signal_connect(close, "clicked", G_CALLBACK(close_store), w);
-    gtk_box_append(GTK_BOX(bar), close);
-    gtk_box_append(GTK_BOX(root), bar);
+    {
+        GtkWidget *title_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        GtkWidget *title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        GtkWidget *title = gtk_label_new("LH4051 App Store");
+        GtkWidget *subtitle = gtk_label_new("Applications, metadata and packages");
 
-    GtkWidget *entry = gtk_search_entry_new();
-    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(entry), "Search applications and packages");
-    gtk_widget_set_margin_start(entry, 10);
-    gtk_widget_set_margin_end(entry, 10);
-    gtk_box_append(GTK_BOX(root), entry);
+        gtk_widget_add_css_class(title, "lh-store-title");
+        gtk_widget_add_css_class(subtitle, "lh-store-subtitle");
+        gtk_label_set_xalign(GTK_LABEL(title), 0);
+        gtk_label_set_xalign(GTK_LABEL(subtitle), 0);
+        gtk_widget_set_hexpand(title_box, TRUE);
+        gtk_box_append(GTK_BOX(title_box), title);
+        gtk_box_append(GTK_BOX(title_box), subtitle);
+        gtk_box_append(GTK_BOX(title_row), title_box);
 
-    GtkWidget *search = gtk_button_new_with_label("Search AppStream + PackageKit");
-    gtk_box_append(GTK_BOX(root), search);
+        GtkWidget *close = gtk_button_new_with_label("✕");
+        gtk_widget_add_css_class(close, "lh-close");
+        g_signal_connect(close, "clicked", G_CALLBACK(close_store), window_widget);
+        gtk_box_append(GTK_BOX(title_row), close);
+        gtk_box_append(GTK_BOX(header), title_row);
+    }
 
-    GtkWidget *results_scroll = gtk_scrolled_window_new();
-    gtk_widget_set_vexpand(results_scroll, TRUE);
-    GtkWidget *results = gtk_text_view_new();
-    gtk_text_view_set_editable(GTK_TEXT_VIEW(results), FALSE);
-    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(results), GTK_WRAP_WORD_CHAR);
-    gtk_widget_add_css_class(results, "lh-store-results");
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(results_scroll), results);
-    gtk_box_append(GTK_BOX(root), results_scroll);
+    search_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(search_row, "lh-store-search");
+    entry = gtk_search_entry_new();
+    gtk_widget_set_hexpand(entry, TRUE);
+    gtk_search_entry_set_placeholder_text(
+        GTK_SEARCH_ENTRY(entry), "Search applications and packages");
+    search = gtk_button_new_with_label("Search");
+    gtk_widget_add_css_class(search, "lh-store-search-button");
+    gtk_box_append(GTK_BOX(search_row), entry);
+    gtk_box_append(GTK_BOX(search_row), search);
+    gtk_box_append(GTK_BOX(header), search_row);
+    gtk_box_append(GTK_BOX(root), header);
 
-    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(results));
-    g_object_set_data(G_OBJECT(search), "entry", entry);
-    g_object_set_data(G_OBJECT(search), "buffer", buffer);
-    g_signal_connect(search, "clicked", G_CALLBACK(search_store), NULL);
+    content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_add_css_class(content, "lh-store-content");
+    gtk_widget_set_vexpand(content, TRUE);
+    gtk_box_append(GTK_BOX(root), content);
 
-    GtkWidget *apps_label = gtk_label_new("Installed Applications");
-    gtk_widget_add_css_class(apps_label, "lh-store-section");
-    gtk_label_set_xalign(GTK_LABEL(apps_label), 0);
-    gtk_box_append(GTK_BOX(root), apps_label);
+    {
+        GtkWidget *section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+        GtkWidget *label = gtk_label_new("Search results");
+        gtk_widget_add_css_class(label, "lh-store-section");
+        gtk_label_set_xalign(GTK_LABEL(label), 0);
+        gtk_box_append(GTK_BOX(section), label);
 
-    GtkWidget *apps_scroll = gtk_scrolled_window_new();
-    gtk_widget_set_vexpand(apps_scroll, TRUE);
-    GtkWidget *apps = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(apps_scroll), apps);
-    gtk_box_append(GTK_BOX(root), apps_scroll);
-    populate_installed_apps(apps);
+        results_scroll = gtk_scrolled_window_new();
+        gtk_widget_set_vexpand(results_scroll, TRUE);
+        results = gtk_text_view_new();
+        gtk_text_view_set_editable(GTK_TEXT_VIEW(results), FALSE);
+        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(results), GTK_WRAP_WORD_CHAR);
+        gtk_widget_add_css_class(results, "lh-store-results");
+        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(results_scroll), results);
+        gtk_box_append(GTK_BOX(section), results_scroll);
+        gtk_box_append(GTK_BOX(content), section);
+    }
+
+    {
+        GtkWidget *section = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+        GtkWidget *label = gtk_label_new("Installed applications");
+        gtk_widget_add_css_class(label, "lh-store-section");
+        gtk_label_set_xalign(GTK_LABEL(label), 0);
+        gtk_box_append(GTK_BOX(section), label);
+
+        apps_scroll = gtk_scrolled_window_new();
+        gtk_widget_set_vexpand(apps_scroll, TRUE);
+        apps = gtk_flow_box_new();
+        gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(apps), GTK_SELECTION_NONE);
+        gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(apps), 6);
+        gtk_flow_box_set_min_children_per_line(GTK_FLOW_BOX(apps), 2);
+        gtk_widget_add_css_class(apps, "lh-store-app-grid");
+        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(apps_scroll), apps);
+        gtk_box_append(GTK_BOX(section), apps_scroll);
+        gtk_box_append(GTK_BOX(content), section);
+        populate_installed_apps(apps);
+    }
+
+    {
+        GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(results));
+        g_object_set_data(G_OBJECT(search), "entry", entry);
+        g_object_set_data(G_OBJECT(search), "buffer", buffer);
+        g_signal_connect(search, "clicked", G_CALLBACK(search_store), NULL);
+        g_signal_connect(entry, "activate", G_CALLBACK(search_store), search);
+        append_text(buffer, "Search AppStream and PackageKit for applications and packages.");
+    }
 
     gtk_window_present(win);
 }
