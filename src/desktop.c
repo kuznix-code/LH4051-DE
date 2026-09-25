@@ -63,8 +63,8 @@ void create_desktop(GtkApplication *app)
     icons = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_widget_set_halign(icons, GTK_ALIGN_START);
     gtk_widget_set_valign(icons, GTK_ALIGN_START);
-    gtk_widget_set_margin_top(18);
-    gtk_widget_set_margin_start(14);
+    gtk_widget_set_margin_top(icons, 18);
+    gtk_widget_set_margin_start(icons, 14);
     gtk_box_append(GTK_BOX(top), icons);
 
     recycle = gtk_button_new_with_label("♻\nRecycle Bin");
