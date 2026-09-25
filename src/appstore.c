@@ -21,19 +21,6 @@ static void app_info_free(LHAppInfo *info)
     g_free(info);
 }
 
-static void close_store(GtkButton *button, gpointer data)
-{
-    (void)button;
-    gtk_window_destroy(GTK_WINDOW(data));
-}
-
-static void append_text(GtkTextBuffer *buffer, const char *text)
-{
-    GtkTextIter end;
-    gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_buffer_insert(buffer, &end, text ? text : "", -1);
-}
-
 static const char *detect_package_manager(void)
 {
     if (g_find_program_in_path("pkcon")) return "packagekit";
@@ -47,7 +34,7 @@ static const char *detect_package_manager(void)
 static void show_message(GtkWindow *parent, const char *title, const char *message)
 {
     GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", title);
-    gtk_alert_dialog_set_detail(dialog, "%s", message ? message : "");
+    gtk_alert_dialog_set_detail(dialog, message ? message : "");
     gtk_alert_dialog_show(dialog, parent);
 }
 
@@ -115,7 +102,7 @@ static void confirm_package_action(GtkButton *button, gpointer data)
     char *detail = g_strdup_printf("Package: %s\nPackage manager: %s\n\nThis operation may require administrator authentication.",
                                     package, detect_package_manager() ? detect_package_manager() : "none");
     GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", title);
-    gtk_alert_dialog_set_detail(dialog, "%s", detail);
+    gtk_alert_dialog_set_detail(dialog, detail);
     const char *buttons[] = {"Cancel", g_strcmp0(action, "install") == 0 ? "Install" : "Uninstall", NULL};
     gtk_alert_dialog_set_buttons(dialog, buttons);
     gtk_alert_dialog_set_default_button(dialog, 1);
