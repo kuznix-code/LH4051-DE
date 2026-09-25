@@ -36,7 +36,103 @@ static void launch_store_app(GtkButton *button, gpointer data)
 }
 #endif
 
-static GtkWidget *make_app_card(GAppInfo *info)
+static void run_package_action(const char *action, const char *package)
+{
+    if (!package || !*package)
+        return;
+
+    const gchar *argv[] = {"pkcon", action, package, NULL};
+    GError *error = NULL;
+    GSubprocess *process = g_subprocess_newv(argv, G_SUBPROCESS_FLAGS_NONE, &error);
+    if (!process) {
+        g_warning("LH4051 App Store: %s",
+                  error ? error->message : "PackageKit unavailable");
+        g_clear_error(&error);
+        return;
+    }
+    g_subprocess_wait_async(process, NULL, NULL, NULL);
+    g_object_unref(process);
+}
+
+static void package_action_from_entry(GtkButton *button, gpointer data)
+{
+    (void)data;
+    GtkWidget *entry = g_object_get_data(G_OBJECT(button), "lh-package-entry");
+    const char *action = g_object_get_data(G_OBJECT(button), "lh-package-action");
+    if (entry && action)
+        run_package_action(action, gtk_editable_get_text(GTK_EDITABLE(entry)));
+}
+
+static void uninstall_app(GtkButton *button, gpointer data)
+{
+    (void)data;
+    const char *package = g_object_get_data(G_OBJECT(button), "lh-package-name");
+    run_package_action("remove", package);
+}
+
+static void app_about(GtkButton *button, gpointer data)
+{
+    GtkWindow *parent = GTK_WINDOW(data);
+    GAppInfo *info = g_object_get_data(G_OBJECT(button), "lh-app-info");
+    if (!info)
+        return;
+
+    GtkWidget *dialog = gtk_window_new();
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), parent);
+    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
+    gtk_window_set_title(GTK_WINDOW(dialog), "Application Information");
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 320);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_margin_top(box, 18);
+    gtk_widget_set_margin_bottom(box, 18);
+    gtk_widget_set_margin_start(box, 18);
+    gtk_widget_set_margin_end(box, 18);
+    gtk_window_set_child(GTK_WINDOW(dialog), box);
+
+    GtkWidget *name = gtk_label_new(g_app_info_get_display_name(info));
+    gtk_widget_add_css_class(name, "lh-store-about-title");
+    gtk_label_set_xalign(GTK_LABEL(name), 0);
+    gtk_box_append(GTK_BOX(box), name);
+
+    const char *description = g_app_info_get_description(info);
+    GtkWidget *desc = gtk_label_new(description && *description
+        ? description : "No application description is available.");
+    gtk_label_set_wrap(GTK_LABEL(desc), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(desc), 0);
+    gtk_box_append(GTK_BOX(box), desc);
+
+    const char *id = g_app_info_get_id(info);
+    GtkWidget *id_label = gtk_label_new(id ? id : "Unknown desktop application ID");
+    gtk_label_set_xalign(GTK_LABEL(id_label), 0);
+    gtk_box_append(GTK_BOX(box), id_label);
+
+    GtkWidget *package = gtk_entry_new();
+    gtk_editable_set_text(GTK_EDITABLE(package), id ? id : "");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(package), "Package name");
+    gtk_box_append(GTK_BOX(box), package);
+
+    GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *install = gtk_button_new_with_label("Install");
+    GtkWidget *uninstall = gtk_button_new_with_label("Uninstall");
+    GtkWidget *close = gtk_button_new_with_label("Close");
+
+    g_object_set_data(G_OBJECT(install), "lh-package-entry", package);
+    g_object_set_data(G_OBJECT(install), "lh-package-action", "install");
+    g_object_set_data(G_OBJECT(uninstall), "lh-package-entry", package);
+    g_object_set_data(G_OBJECT(uninstall), "lh-package-action", "remove");
+    g_signal_connect(install, "clicked", G_CALLBACK(package_action_from_entry), NULL);
+    g_signal_connect(uninstall, "clicked", G_CALLBACK(package_action_from_entry), NULL);
+    g_signal_connect_swapped(close, "clicked", G_CALLBACK(gtk_window_destroy), dialog);
+
+    gtk_box_append(GTK_BOX(actions), install);
+    gtk_box_append(GTK_BOX(actions), uninstall);
+    gtk_box_append(GTK_BOX(actions), close);
+    gtk_box_append(GTK_BOX(box), actions);
+    gtk_window_present(GTK_WINDOW(dialog));
+}
+
+static GtkWidget *make_app_card(GAppInfo *info, GtkWindow *parent)
 {
     const char *name = g_app_info_get_display_name(info);
     const char *id = g_app_info_get_id(info);
@@ -56,12 +152,26 @@ static GtkWidget *make_app_card(GAppInfo *info)
 #ifdef G_OS_UNIX
     if (id)
         g_object_set_data_full(G_OBJECT(button), "lh-app-id", g_strdup(id), g_free);
-    g_signal_connect(button, "clicked", G_CALLBACK(launch_store_app), NULL);
 #endif
+
+    GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *about = gtk_button_new_with_label("About");
+    GtkWidget *uninstall = gtk_button_new_with_label("Uninstall");
+    gtk_widget_add_css_class(about, "lh-store-card-action");
+    gtk_widget_add_css_class(uninstall, "lh-store-card-action");
+    g_object_set_data(G_OBJECT(about), "lh-app-info", info);
+    g_object_set_data_full(G_OBJECT(uninstall), "lh-package-name",
+                           g_strdup(id ? id : ""), g_free);
+    g_signal_connect(about, "clicked", G_CALLBACK(app_about), parent);
+    g_signal_connect(uninstall, "clicked", G_CALLBACK(uninstall_app), NULL);
+    gtk_box_append(GTK_BOX(actions), about);
+    gtk_box_append(GTK_BOX(actions), uninstall);
+    gtk_box_append(GTK_BOX(box), actions);
+
     return button;
 }
 
-static void populate_installed_apps(GtkWidget *flow)
+static void populate_installed_apps(GtkWidget *flow, GtkWindow *parent)
 {
 #ifdef G_OS_UNIX
     GList *apps = g_app_info_get_all();
@@ -73,7 +183,7 @@ static void populate_installed_apps(GtkWidget *flow)
             !g_app_info_get_id(info))
             continue;
 
-        gtk_flow_box_insert(GTK_FLOW_BOX(flow), make_app_card(info), -1);
+        gtk_flow_box_insert(GTK_FLOW_BOX(flow), make_app_card(info, parent), -1);
     }
 
     g_list_free_full(apps, g_object_unref);
@@ -259,7 +369,7 @@ void create_lh4051_appstore(GtkApplication *app)
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(apps_scroll), apps);
         gtk_box_append(GTK_BOX(section), apps_scroll);
         gtk_box_append(GTK_BOX(content), section);
-        populate_installed_apps(apps);
+        populate_installed_apps(apps, win);
     }
 
     {
