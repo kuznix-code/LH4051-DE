@@ -336,9 +336,12 @@ LTOFLAGS := -flto=auto
 CORE_SRC := src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/settings.c src/appstore.c src/explorer.c
 CORE_OBJDIR := build/core
 CORE_OBJ := $(patsubst src/%.c,$(CORE_OBJDIR)/%.o,$(CORE_SRC))
-WM_OBJ := src/LH4051-WM/build/wm.o
-FM_OBJ := src/LH4051-FM/build/fm.o
-SESSION_OBJ := src/LH4051-SESSION/build/session.o
+WM_DIR := $(CURDIR)/src/LH4051-WM
+FM_DIR := $(CURDIR)/src/LH4051-FM
+SESSION_DIR := $(CURDIR)/src/LH4051-SESSION
+WM_OBJ := $(WM_DIR)/build/wm.o
+FM_OBJ := $(FM_DIR)/build/fm.o
+SESSION_OBJ := $(SESSION_DIR)/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
@@ -401,11 +404,14 @@ $(CORE_OBJDIR)/%.o: src/%.c
 	@$(CC_SELECTED) $(CFLAGS) -c $< -o $@
 
 $(WM_OBJ):
-	@$(MAKE) --no-print-directory -C src/LH4051-WM ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)"
+	@$(MAKE) --no-print-directory -C "$(WM_DIR)" ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)" all
+	@test -f "$@"
 $(FM_OBJ):
-	@$(MAKE) --no-print-directory -C src/LH4051-FM ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)"
+	@$(MAKE) --no-print-directory -C "$(FM_DIR)" ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)" all
+	@test -f "$@"
 $(SESSION_OBJ):
-	@$(MAKE) --no-print-directory -C src/LH4051-SESSION ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)"
+	@$(MAKE) --no-print-directory -C "$(SESSION_DIR)" ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)" all
+	@test -f "$@"
 
 subprojects: $(SUBPROJECT_OBJS)
 wm: $(WM_OBJ)
@@ -415,6 +421,9 @@ session: $(SESSION_OBJ)
 clean:
 	@printf "$(YELLOW)==> Cleaning build artifacts$(RESET)\n"
 	@rm -rf build
+	@$(MAKE) --no-print-directory -C "$(WM_DIR)" clean
+	@$(MAKE) --no-print-directory -C "$(FM_DIR)" clean
+	@$(MAKE) --no-print-directory -C "$(SESSION_DIR)" clean
 	@$(MAKE) --no-print-directory -C src/LH4051-WM clean
 	@$(MAKE) --no-print-directory -C src/LH4051-FM clean
 	@$(MAKE) --no-print-directory -C src/LH4051-SESSION clean
