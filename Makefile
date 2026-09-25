@@ -342,11 +342,32 @@ SESSION_OBJ := src/LH4051-SESSION/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
-.PHONY: all build clean run dist help show-target cpu-build subprojects wm fm session wallpaper $(TARGETS)
+.PHONY: all build clean run dist help show-target cpu-build subprojects wm fm session sessions data wallpaper $(TARGETS)
 
 all: $(TARGET_BIN)
 
 build: all
+
+sessions: session data
+
+DATA_SRC_WAYLAND := data/wayland-sessions/lh4051-de.desktop.in
+DATA_SRC_X11 := data/xsessions/lh4051-de.desktop.in
+DATA_BUILD_DIR := build/data
+DATA_WAYLAND := $(DATA_BUILD_DIR)/wayland-sessions/lh4051-de.desktop
+DATA_X11 := $(DATA_BUILD_DIR)/xsessions/lh4051-de.desktop
+
+data: $(DATA_WAYLAND) $(DATA_X11)
+
+$(DATA_WAYLAND): $(DATA_SRC_WAYLAND)
+	@mkdir -p $(@D)
+	@printf "$(DIM)DATA %s\n" "$@"
+	@sed -e 's|@bindir@|/usr/bin|g' -e 's|0.0.0|$(VERSION)|g' "$<" > "$@"
+
+$(DATA_X11): $(DATA_SRC_X11)
+	@mkdir -p $(@D)
+	@printf "$(DIM)DATA %s\n" "$@"
+	@sed -e 's|@bindir@|/usr/bin|g' -e 's|0.0.0|$(VERSION)|g' "$<" > "$@"
+
 
 cpu-build:
 	@if [ -z "$(CPU)" ]; then \
@@ -404,6 +425,8 @@ run: all
 	@./$(TARGET_BIN)
 
 dist:
+	@printf "$(GREEN)==> Running full build before packaging$(RESET)\n"
+	@$(MAKE) --no-print-directory TARGET="$(TARGET)" all sessions data
 	@if ! command -v makepkg >/dev/null 2>&1 || ! command -v pacman >/dev/null 2>&1; then \
 		printf "$(RED)make dist is only supported on pacman/makepkg systems$(RESET)\n"; \
 		exit 2; \
