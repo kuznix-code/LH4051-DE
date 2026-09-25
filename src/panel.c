@@ -1,5 +1,6 @@
 #include "longhorn.h"
 #include "LH4051-WM/wm.h"
+#include "LH4051-SESSION/session.h"
 static GtkWidget *clock_label;
 static GtkWidget *task_box;
 
@@ -35,13 +36,8 @@ static void explorer_clicked(GtkButton*b,gpointer d){(void)b;create_file_explore
 
 void create_longhorn_panel(GtkApplication*app){
     GtkWidget*w=gtk_application_window_new(app); GtkWindow*win=GTK_WINDOW(w);
-    gtk_layer_init_for_window(win);
-    gtk_layer_set_layer(win,GTK_LAYER_SHELL_LAYER_TOP);
-    gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_BOTTOM,TRUE);
-    gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_LEFT,TRUE);
-    gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_RIGHT,TRUE);
+    lh4051_session_setup_shell_window(win,LH4051_SHELL_PANEL);
     gtk_widget_set_size_request(w,1,LH4051_PANEL_HEIGHT);
-    gtk_layer_auto_exclusive_zone_enable(win);
     GtkWidget*bar=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0); gtk_widget_add_css_class(bar,"lh-panel"); gtk_window_set_child(win,bar);
     GtkWidget*start=gtk_button_new_with_label("⊞  start"); gtk_widget_add_css_class(start,"lh-start");
     g_signal_connect(start,"clicked",G_CALLBACK(start_clicked),app); gtk_box_append(GTK_BOX(bar),start);
