@@ -1,16 +1,13 @@
 #include "longhorn.h"
-#include "fm.h"
-#include "wm.h"
+#include "LH4051-FM.h"
+#include "LH4051-WM.h"
 static void populate_files(GtkListBox*list,const char*path){
     GPtrArray*items=lh4051_fm_list(path);
     for(guint x=0;x<items->len;x++){
-        const char*n=g_ptr_array_index(items,x);
-        char*full=g_build_filename(path,n,NULL);
-        GFile*f=g_file_new_for_path(full);
-        GFileInfo*i=g_file_query_info(f,G_FILE_ATTRIBUTE_STANDARD_TYPE,G_FILE_QUERY_INFO_NONE,NULL,NULL);
+        const char*n=g_ptr_array_index(items,x); char*full=g_build_filename(path,n,NULL);
+        GFile*f=g_file_new_for_path(full); GFileInfo*i=g_file_query_info(f,G_FILE_ATTRIBUTE_STANDARD_TYPE,G_FILE_QUERY_INFO_NONE,NULL,NULL);
         const char*ic=(i&&g_file_info_get_file_type(i)==G_FILE_TYPE_DIRECTORY)?"📁":"📄";
-        GtkWidget*r=gtk_list_box_row_new(); GtkWidget*l=gtk_label_new(NULL);
-        char*s=g_strdup_printf("%s  %s",ic,n);
+        GtkWidget*r=gtk_list_box_row_new(); GtkWidget*l=gtk_label_new(NULL); char*s=g_strdup_printf("%s  %s",ic,n);
         gtk_label_set_text(GTK_LABEL(l),s); gtk_label_set_xalign(GTK_LABEL(l),0); gtk_widget_set_margin_start(l,8);
         gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(r),l); gtk_list_box_append(list,r);
         g_free(s); if(i)g_object_unref(i); g_object_unref(f); g_free(full);
@@ -20,8 +17,7 @@ static void populate_files(GtkListBox*list,const char*path){
 static void close_explorer(GtkButton*b,gpointer d){(void)b;lh4051_wm_unregister(GTK_WINDOW(d));gtk_window_destroy(GTK_WINDOW(d));}
 void create_file_explorer(GtkApplication*app,const char*path){
     GtkWidget*w=gtk_application_window_new(app); GtkWindow*win=GTK_WINDOW(w);
-    gtk_window_set_title(win,"My Documents"); gtk_window_set_default_size(win,980,680);
-    lh4051_wm_register(win,"My Documents");
+    gtk_window_set_title(win,"My Documents"); gtk_window_set_default_size(win,980,680); lh4051_wm_register(win,"My Documents");
     GtkWidget*r=gtk_box_new(GTK_ORIENTATION_VERTICAL,0); gtk_widget_add_css_class(r,"lh-explorer"); gtk_window_set_child(win,r);
     GtkWidget*t=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4); gtk_widget_add_css_class(t,"lh-titlebar");
     GtkWidget*ttl=gtk_label_new("My Documents"); gtk_widget_set_hexpand(ttl,TRUE); gtk_label_set_xalign(GTK_LABEL(ttl),0); gtk_box_append(GTK_BOX(t),ttl);
