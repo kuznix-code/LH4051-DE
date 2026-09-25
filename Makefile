@@ -16,7 +16,7 @@ ARCH_LDFLAGS =
 endif
 GTK_CFLAGS = $(shell $(PKG_CONFIG) --cflags gtk4 gtk4-layer-shell-0)
 GTK_LIBS = $(shell $(PKG_CONFIG) --libs gtk4 gtk4-layer-shell-0)
-CFLAGS = $(BASE_CFLAGS) $(ARCH_CFLAGS) $(GTK_CFLAGS) -Isubprojects/LH4051-WM -Isubprojects/LH4051-FM -Isubprojects/LH4051-SHELL
+CFLAGS = $(BASE_CFLAGS) $(ARCH_CFLAGS) $(GTK_CFLAGS) -Isubprojects/LH4051-WM -Isubprojects/LH4051-FM -Isubprojects/LH4051-SHELL -Isrc
 LDFLAGS = $(ARCH_LDFLAGS) $(GTK_LIBS) -lm
 SRC = src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/explorer.c subprojects/LH4051-WM/wm.c subprojects/LH4051-FM/fm.c subprojects/LH4051-SHELL/shell.c
 OBJDIR = build
