@@ -38,28 +38,146 @@ static void show_message(GtkWindow *parent, const char *title, const char *messa
     gtk_alert_dialog_show(dialog, parent);
 }
 
-static void package_log(GtkWindow *parent, const char *action, const char *package, const char *pm)
+typedef struct {
+    GtkWidget *output;
+    GtkWidget *status;
+    GtkWidget *close_button;
+    GSubprocess *process;
+    GDataInputStream *stdout_stream;
+    GDataInputStream *stderr_stream;
+} LHPackageOperation;
+
+static void operation_append(LHPackageOperation *op, const char *prefix, const char *line)
+{
+    if (!op || !op->output || !line) return;
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(op->output));
+    GtkTextIter end;
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    char *text = g_strdup_printf("%s%s\\n", prefix ? prefix : "", line);
+    gtk_text_buffer_insert(buffer, &end, text, -1);
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(op->output), &end, 0.0, FALSE, 0.0, 1.0);
+    g_free(text);
+}
+
+static void operation_read_line(GObject *source, GAsyncResult *result, gpointer user_data);
+
+static void operation_read_next(GDataInputStream *stream, LHPackageOperation *op)
+{
+    g_data_input_stream_read_line_async(stream, G_PRIORITY_DEFAULT, NULL,
+                                        operation_read_line, op);
+}
+
+static void operation_read_line(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    GDataInputStream *stream = G_DATA_INPUT_STREAM(source);
+    LHPackageOperation *op = user_data;
+    GError *error = NULL;
+    gsize length = 0;
+    char *line = g_data_input_stream_read_line_finish(stream, result, &length, &error);
+
+    if (line) {
+        operation_append(op, stream == op->stderr_stream ? "[stderr] " : "", line);
+        g_free(line);
+        operation_read_next(stream, op);
+    } else if (error) {
+        operation_append(op, "[error] ", error->message);
+        g_clear_error(&error);
+    }
+}
+
+static void operation_finished(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    LHPackageOperation *op = user_data;
+    GError *error = NULL;
+    gboolean ok = g_subprocess_wait_finish(G_SUBPROCESS(source), result, &error);
+    int status = ok && g_subprocess_get_if_exited(op->process)
+        ? g_subprocess_get_exit_status(op->process) : -1;
+
+    if (error) {
+        operation_append(op, "[error] ", error->message);
+        g_clear_error(&error);
+    }
+
+    if (status == 0) {
+        gtk_label_set_text(GTK_LABEL(op->status), "Completed successfully");
+        gtk_widget_add_css_class(op->status, "lh-operation-success");
+    } else {
+        char *message = g_strdup_printf("Package operation failed (exit status %d)", status);
+        gtk_label_set_text(GTK_LABEL(op->status), message);
+        gtk_widget_add_css_class(op->status, "lh-operation-failed");
+        g_free(message);
+    }
+    gtk_widget_set_sensitive(op->close_button, TRUE);
+    g_clear_object(&op->stdout_stream);
+    g_clear_object(&op->stderr_stream);
+    g_clear_object(&op->process);
+}
+
+static LHPackageOperation *package_log(GtkWindow *parent, const char *action,
+                                       const char *package, const char *pm)
 {
     GtkWindow *w = GTK_WINDOW(gtk_window_new());
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    GtkWidget *title = gtk_label_new(g_strcmp0(action, "install") == 0 ? "Installing application" : "Uninstalling application");
-    GtkWidget *text = gtk_label_new(NULL);
-    char *detail = g_strdup_printf("Package: %s\nPackage manager: %s\n\nThe package manager is running.\nAdministrator authentication may be requested.",
-                                    package ? package : "unknown", pm ? pm : "none");
-    gtk_label_set_text(GTK_LABEL(text), detail);
-    gtk_label_set_wrap(GTK_LABEL(text), TRUE);
-    gtk_widget_set_margin_top(box, 16);
-    gtk_widget_set_margin_bottom(box, 16);
-    gtk_widget_set_margin_start(box, 16);
-    gtk_widget_set_margin_end(box, 16);
-    gtk_box_append(GTK_BOX(box), title);
-    gtk_box_append(GTK_BOX(box), text);
+    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *title = gtk_label_new(g_strcmp0(action, "install") == 0
+        ? "Installing application" : "Uninstalling application");
+    GtkWidget *detail = gtk_label_new(NULL);
+    GtkWidget *frame = gtk_frame_new("Live terminal output");
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    GtkWidget *output = gtk_text_view_new();
+    GtkWidget *status = gtk_label_new("Starting package manager…");
+    GtkWidget *close = gtk_button_new_with_label("Close");
+
+    gtk_widget_add_css_class(root, "lh-operation");
+    gtk_widget_add_css_class(title, "lh-operation-title");
+    gtk_widget_add_css_class(detail, "lh-operation-detail");
+    gtk_widget_add_css_class(output, "lh-terminal");
+    gtk_widget_add_css_class(status, "lh-operation-status");
+    gtk_widget_add_css_class(close, "lh-operation-close");
+
+    char *text = g_strdup_printf("Package: %s\\nPackage manager: %s\\nAdministrator authentication may be requested.",
+                                 package ? package : "unknown", pm ? pm : "none");
+    gtk_label_set_text(GTK_LABEL(detail), text);
+    gtk_label_set_xalign(GTK_LABEL(title), 0);
+    gtk_label_set_xalign(GTK_LABEL(detail), 0);
+    gtk_label_set_wrap(GTK_LABEL(detail), TRUE);
+
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(output), FALSE);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(output), FALSE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(output), TRUE);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_widget_set_vexpand(output, TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), output);
+    gtk_frame_set_child(GTK_FRAME(frame), scroll);
+
+    gtk_box_append(GTK_BOX(header), title);
+    gtk_box_append(GTK_BOX(header), detail);
+    gtk_box_append(GTK_BOX(root), header);
+    gtk_box_append(GTK_BOX(root), frame);
+    gtk_box_append(GTK_BOX(root), status);
+    gtk_box_append(GTK_BOX(root), close);
+
+    gtk_widget_set_vexpand(frame, TRUE);
+    gtk_widget_set_margin_top(root, 16);
+    gtk_widget_set_margin_bottom(root, 16);
+    gtk_widget_set_margin_start(root, 16);
+    gtk_widget_set_margin_end(root, 16);
+
     gtk_window_set_title(w, "LH4051 App Store — Package Operation");
-    gtk_window_set_default_size(w, 420, 180);
+    gtk_window_set_default_size(w, 760, 520);
     gtk_window_set_transient_for(w, parent);
-    gtk_window_set_child(w, box);
+    gtk_window_set_child(w, root);
+    gtk_widget_set_sensitive(close, FALSE);
+    g_signal_connect_swapped(close, "clicked", G_CALLBACK(gtk_window_destroy), w);
     gtk_window_present(w);
-    g_free(detail);
+    g_free(text);
+
+    LHPackageOperation *op = g_new0(LHPackageOperation, 1);
+    op->output = output;
+    op->status = status;
+    op->close_button = close;
+    return op;
 }
 
 static void package_command(const char *action, const char *package, GtkWindow *parent)
@@ -67,8 +185,15 @@ static void package_command(const char *action, const char *package, GtkWindow *
     if (!package || !*package) return;
 
     const char *pm = detect_package_manager();
-    package_log(parent, action, package, pm);
-    if (!pm) return;
+    LHPackageOperation *op = package_log(parent, action, package, pm);
+
+    if (!pm) {
+        operation_append(op, "[error] ", "No supported package manager was found.");
+        gtk_label_set_text(GTK_LABEL(op->status), "No package manager found");
+        gtk_widget_set_sensitive(op->close_button, TRUE);
+        g_free(op);
+        return;
+    }
 
     const char *argv[6] = {0};
     if (g_strcmp0(pm, "packagekit") == 0) {
@@ -93,13 +218,23 @@ static void package_command(const char *action, const char *package, GtkWindow *
     }
 
     GError *error = NULL;
-    GSubprocess *process = g_subprocess_newv(argv, G_SUBPROCESS_FLAGS_NONE, &error);
+    GSubprocess *process = g_subprocess_newv(argv,
+        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error);
     if (!process) {
-        g_warning("LH4051 App Store: %s", error ? error->message : "package manager unavailable");
+        operation_append(op, "[error] ", error ? error->message : "Could not start package manager.");
+        gtk_label_set_text(GTK_LABEL(op->status), "Could not start package manager");
+        gtk_widget_set_sensitive(op->close_button, TRUE);
         g_clear_error(&error);
+        g_free(op);
         return;
     }
-    g_subprocess_wait_async(process, NULL, NULL, NULL);
+
+    op->process = g_object_ref(process);
+    op->stdout_stream = g_data_input_stream_new(g_subprocess_get_stdout_pipe(process));
+    op->stderr_stream = g_data_input_stream_new(g_subprocess_get_stderr_pipe(process));
+    operation_read_next(op->stdout_stream, op);
+    operation_read_next(op->stderr_stream, op);
+    g_subprocess_wait_async(process, NULL, operation_finished, op);
     g_object_unref(process);
 }
 
@@ -176,36 +311,47 @@ static void app_about(GtkButton *button, gpointer data)
     g_free(detail);
 }
 
+static GtkWidget *make_icon(LHAppInfo *info)
+{
+    GtkWidget *image = NULL;
+    if (info->gicon)
+        image = gtk_image_new_from_gicon(info->gicon);
+    else if (info->icon && *info->icon) {
+        if (g_path_is_absolute(info->icon))
+            image = gtk_image_new_from_file(info->icon);
+        else
+            image = gtk_image_new_from_icon_name(info->icon);
+    }
+    if (!image)
+        image = gtk_image_new_from_icon_name("application-x-executable");
+    gtk_image_set_pixel_size(GTK_IMAGE(image), 56);
+    gtk_widget_add_css_class(image, "lh-store-app-icon");
+    return image;
+}
+
 static GtkWidget *make_app_card(LHAppInfo *info, GtkWindow *parent, gboolean installed)
 {
-    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    GtkWidget *icon = NULL;
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
+    GtkWidget *icon_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7);
     GtkWidget *title = gtk_label_new(info->name ? info->name : "Application");
     GtkWidget *summary = gtk_label_new(info->summary ? info->summary : "");
-    GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-
-    if (info->icon && *info->icon) {
-        if (g_path_is_absolute(info->icon))
-            icon = gtk_image_new_from_file(info->icon);
-        else
-            icon = gtk_image_new_from_icon_name(info->icon);
-    }
-    if (!icon)
-        icon = gtk_image_new_from_icon_name("application-x-executable");
-
-    gtk_image_set_pixel_size(GTK_IMAGE(icon), 64);
-    gtk_widget_add_css_class(icon, "lh-store-app-icon");
+    GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
 
     gtk_widget_add_css_class(card, "lh-store-app-card");
+    gtk_widget_add_css_class(icon_box, "lh-store-icon-box");
+    gtk_widget_add_css_class(body, "lh-store-app-body");
     gtk_widget_add_css_class(title, "lh-store-app-name");
     gtk_widget_add_css_class(summary, "lh-store-app-summary");
+    gtk_widget_set_hexpand(body, TRUE);
     gtk_label_set_xalign(GTK_LABEL(title), 0);
     gtk_label_set_xalign(GTK_LABEL(summary), 0);
     gtk_label_set_wrap(GTK_LABEL(summary), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(summary), 70);
 
-    gtk_box_append(GTK_BOX(card), icon);
-    gtk_box_append(GTK_BOX(card), title);
-    gtk_box_append(GTK_BOX(card), summary);
+    gtk_box_append(GTK_BOX(icon_box), make_icon(info));
+    gtk_box_append(GTK_BOX(body), title);
+    gtk_box_append(GTK_BOX(body), summary);
 
     GtkWidget *about = gtk_button_new_with_label("About");
     g_object_set_data(G_OBJECT(about), "lh-app-info", info);
@@ -227,7 +373,9 @@ static GtkWidget *make_app_card(LHAppInfo *info, GtkWindow *parent, gboolean ins
         gtk_box_append(GTK_BOX(actions), action);
     }
 
-    gtk_box_append(GTK_BOX(card), actions);
+    gtk_box_append(GTK_BOX(body), actions);
+    gtk_box_append(GTK_BOX(card), icon_box);
+    gtk_box_append(GTK_BOX(card), body);
     return card;
 }
 
