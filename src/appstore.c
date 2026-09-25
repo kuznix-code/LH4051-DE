@@ -91,6 +91,19 @@ static void package_command(const char *action, const char *package)
     g_object_unref(process);
 }
 
+static void package_confirm_finished(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    GtkAlertDialog *dialog = GTK_ALERT_DIALOG(source);
+    GError *error = NULL;
+    int choice = gtk_alert_dialog_choose_finish(dialog, result, &error);
+    if (!error && choice == 1)
+        package_command(g_object_get_data(G_OBJECT(dialog), "lh-action-copy"),
+                        g_object_get_data(G_OBJECT(dialog), "lh-package-copy"));
+    g_clear_error(&error);
+    g_object_unref(dialog);
+    (void)user_data;
+}
+
 static void confirm_package_action(GtkButton *button, gpointer data)
 {
     const char *action = g_object_get_data(G_OBJECT(button), "lh-action");
@@ -110,19 +123,7 @@ static void confirm_package_action(GtkButton *button, gpointer data)
     g_object_set_data_full(G_OBJECT(dialog), "lh-action-copy", g_strdup(action), g_free);
     g_object_set_data_full(G_OBJECT(dialog), "lh-package-copy", g_strdup(package), g_free);
     gtk_alert_dialog_choose(dialog, parent, NULL,
-        (GAsyncReadyCallback)[](GObject *source, GAsyncResult *result, gpointer user_data) {
-            GtkAlertDialog *d = GTK_ALERT_DIALOG(source);
-            GError *error = NULL;
-            int choice = gtk_alert_dialog_choose_finish(d, result, &error);
-            if (!error && choice == 1)
-                package_command(g_object_get_data(G_OBJECT(d), "lh-action-copy"),
-                                g_object_get_data(G_OBJECT(d), "lh-package-copy"));
-            g_clear_error(&error);
-            g_object_unref(d);
-            (void)user_data;
-        }, NULL);
-    g_object_ref(dialog);
-    gtk_window_destroy(GTK_WINDOW(dialog));
+        (GAsyncReadyCallback)package_confirm_finished, NULL);
     g_free(title);
     g_free(detail);
 }
