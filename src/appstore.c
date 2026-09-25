@@ -34,7 +34,6 @@ static void launch_store_app(GtkButton *button, gpointer data)
     g_object_unref(info);
 }
 
-}
 #endif
 
 static void populate_installed_apps(GtkWidget *box)
