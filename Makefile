@@ -38,8 +38,6 @@ ifeq ($(HOST_OS),linux)
         endif
       else ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
         DEFAULT_TARGET := linux-cachy-v3
-      else ifneq (,$(findstring avx,$(HOST_CPU_FLAGS)))
-        DEFAULT_TARGET := linux-cachy-v2
       else
         DEFAULT_TARGET := linux-cachy
       endif
@@ -141,7 +139,6 @@ TARGET_CC_linux-generic-x86_64v2 := gcc
 TARGET_CC_linux-generic-x86_64v3 := gcc
 TARGET_CC_linux-generic-x86_64v4 := gcc
 TARGET_CC_linux-cachy := gcc
-TARGET_CC_linux-cachy-v2 := gcc
 TARGET_CC_linux-cachy-v3 := gcc
 TARGET_CC_linux-cachy-v4 := gcc
 TARGET_CC_linux-ubuntu-x86_64 := x86_64-linux-gnu-gcc
@@ -271,7 +268,6 @@ TARGET_CFLAGS_linux-generic-x86_64v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-generic-x86_64v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-generic-x86_64v4 := -march=x86-64-v4
 TARGET_CFLAGS_linux-cachy := -march=x86-64
-TARGET_CFLAGS_linux-cachy-v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-cachy-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-cachy-v4 := -march=x86-64-v4
 TARGET_CC_linux-cachy-excavator := gcc
@@ -304,7 +300,7 @@ $(foreach cpu,$(X86_CPU_CODENAMES),$(eval $(call cachy_cpu_target_rules,$(cpu)))
 
 LINUX_TARGETS := \
 linux-generic-x86_64 linux-generic-x86_64v2 linux-generic-x86_64v3 linux-generic-x86_64v4 \
-linux-cachy linux-cachy-v2 linux-cachy-v3 linux-cachy-v4 linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
+linux-cachy linux-cachy-v3 linux-cachy-v4 linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
 linux-alhp-v2 linux-alhp-v3 linux-alhp-v4 linux-generic-aarch64 linux-ubuntu-aarch64 linux-debian-aarch64 linux-fedora-aarch64 linux-arch-aarch64 \
 linux-generic-armv7 linux-ubuntu-armv7 linux-debian-armv7 linux-arch-armv7 linux-generic-armv6 linux-debian-armv6 linux-generic-armv5 linux-generic-armv4 \
 linux-generic-i486 linux-generic-i586 linux-generic-i686 linux-generic-i386 linux-arch-i486 linux-arch-i686 linux-debian-i686 \
