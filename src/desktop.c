@@ -11,7 +11,7 @@ static GtkWidget *create_wallpaper(void)
 {
     const char *path = g_getenv("LH4051_WALLPAPER");
     if (!path || !*path)
-        path = "images/wallpapers.jpg";
+        path = "images/wallpaper.jpg";
 
     GtkWidget *picture = gtk_picture_new();
     GError *error = NULL;
