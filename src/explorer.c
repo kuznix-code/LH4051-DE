@@ -1,6 +1,6 @@
 #include "longhorn.h"
-#include "LH4051-FM.h"
-#include "LH4051-WM.h"
+#include "LH4051-FM/fm.h"
+#include "LH4051-WM/wm.h"
 static void populate_files(GtkListBox*list,const char*path){
     GPtrArray*items=lh4051_fm_list(path);
     for(guint x=0;x<items->len;x++){
