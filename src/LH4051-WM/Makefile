@@ -6,7 +6,7 @@ VERSION ?= 0.0.0
 BUILD_DIR := build
 TARGET := $(BUILD_DIR)/wm.o
 GTK_CFLAGS := $(shell $(PKG_CONFIG) --cflags gtk4)
-ARCH_CFLAGS := $(if $(filter cachy-v4,$(ARCH)),-march=x86-64-v4,-march=x86-64-v3)
+ARCH_CFLAGS := $(if $(filter cachy-v4,$(ARCH)),-march=x86-64-v4,$(if $(filter cachy-v3 cachy,$(ARCH)),-march=x86-64-v3,-march=x86-64))
 CFLAGS ?= -Wall -Wextra -O3 -pipe -DVERSION=\\"$(VERSION)\\" $(ARCH_CFLAGS) $(GTK_CFLAGS)
 
 .PHONY: all clean
