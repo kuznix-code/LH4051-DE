@@ -152,9 +152,22 @@ static void app_about(GtkButton *button, gpointer data)
 static GtkWidget *make_app_card(LHAppInfo *info, GtkWindow *parent, gboolean installed)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *icon = NULL;
     GtkWidget *title = gtk_label_new(info->name ? info->name : "Application");
     GtkWidget *summary = gtk_label_new(info->summary ? info->summary : "");
     GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+
+    if (info->icon && *info->icon) {
+        if (g_path_is_absolute(info->icon))
+            icon = gtk_image_new_from_file(info->icon);
+        else
+            icon = gtk_image_new_from_icon_name(info->icon);
+    }
+    if (!icon)
+        icon = gtk_image_new_from_icon_name("application-x-executable");
+
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 64);
+    gtk_widget_add_css_class(icon, "lh-store-app-icon");
 
     gtk_widget_add_css_class(card, "lh-store-app-card");
     gtk_widget_add_css_class(title, "lh-store-app-name");
@@ -163,6 +176,7 @@ static GtkWidget *make_app_card(LHAppInfo *info, GtkWindow *parent, gboolean ins
     gtk_label_set_xalign(GTK_LABEL(summary), 0);
     gtk_label_set_wrap(GTK_LABEL(summary), TRUE);
 
+    gtk_box_append(GTK_BOX(card), icon);
     gtk_box_append(GTK_BOX(card), title);
     gtk_box_append(GTK_BOX(card), summary);
 
