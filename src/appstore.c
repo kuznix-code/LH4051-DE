@@ -144,7 +144,7 @@ static void app_about(GtkButton *button, gpointer data)
         info->id ? info->id : "unknown",
         info->package ? info->package : "unknown",
         info->homepage ? info->homepage : "not provided");
-    gtk_alert_dialog_set_detail(dialog, "%s", detail);
+    gtk_alert_dialog_set_detail(dialog, detail);
     gtk_alert_dialog_show(dialog, parent);
     g_free(detail);
 }
