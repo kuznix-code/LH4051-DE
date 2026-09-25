@@ -17,3 +17,5 @@ gboolean lh4051_session_is_wayland(void);
 gboolean lh4051_session_is_x11(void);
 const char *lh4051_session_backend_name(void);
 void lh4051_session_setup_shell_window(GtkWindow *window, LH4051ShellRole role);
+
+#endif /* LH4051_SESSION_H */
