@@ -11,6 +11,7 @@ typedef struct {
     char *package;
     char *homepage;
     char *icon;
+    GIcon *gicon;
 } LHAppInfo;
 
 static void app_info_free(LHAppInfo *info)
@@ -18,6 +19,7 @@ static void app_info_free(LHAppInfo *info)
     if (!info) return;
     g_free(info->id); g_free(info->name); g_free(info->summary);
     g_free(info->package); g_free(info->homepage); g_free(info->icon);
+    g_clear_object(&info->gicon);
     g_free(info);
 }
 
@@ -464,6 +466,8 @@ static void populate_installed_apps(GtkWidget *flow, GtkWindow *parent)
         info->name = g_strdup(g_app_info_get_display_name(ginfo));
         info->summary = g_strdup(g_app_info_get_description(ginfo));
         info->package = NULL;
+        info->gicon = g_app_info_get_icon(ginfo);
+        if (info->gicon) g_object_ref(info->gicon);
         GtkWidget *card = make_app_card(info, parent, TRUE);
         g_object_set_data_full(G_OBJECT(card), "lh-app-info", info, (GDestroyNotify)app_info_free);
         gtk_flow_box_insert(GTK_FLOW_BOX(flow), card, -1);
