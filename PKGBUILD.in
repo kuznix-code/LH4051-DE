@@ -11,10 +11,12 @@ source=()
 
 build() {
     cd "$startdir"
-    make TARGET=linux-arch-x86_64
+    make TARGET=linux-arch-x86_64 all sessions data
 }
 
 package() {
     cd "$startdir"
     install -Dm755 build/lh4051-de "$pkgdir/usr/bin/lh4051-de"
+    install -Dm644 build/data/wayland-sessions/lh4051-de.desktop "$pkgdir/usr/share/wayland-sessions/lh4051-de.desktop"
+    install -Dm644 build/data/xsessions/lh4051-de.desktop "$pkgdir/usr/share/xsessions/lh4051-de.desktop"
 }
