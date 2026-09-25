@@ -408,9 +408,8 @@ dist:
 		printf "$(RED)make dist is only supported on pacman/makepkg systems$(RESET)\n"; \
 		exit 2; \
 	fi
-	@ARCH="$(uname -m)"; \
-	printf "$(CYAN)==> Generating PKGBUILD [arch=$ARCH]$(RESET)\n"; \
-	sed -e "s/@VERSION@/$(VERSION)/g" -e "s/@ARCH@/$ARCH/g" PKGBUILD.in > PKGBUILD; \
+	@printf "$(CYAN)==> Generating PKGBUILD [arch=$(HOST_ARCH)]$(RESET)\n"; \
+	sed -e "s/@VERSION@/$(VERSION)/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
 	printf "$(GREEN)==> Building Arch package with makepkg$(RESET)\n"; \
 	makepkg -f
 
