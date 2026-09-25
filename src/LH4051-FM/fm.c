@@ -33,7 +33,7 @@ LH4051FMItem *lh4051_fm_item_new(const char *path, const char *name)
         return NULL;
 
     item = g_new0(LH4051FMItem, 1);
-    item->name = g_strdup(name);
+    item->name = g_utf8_make_valid(name, -1);
     item->path = g_build_filename(path, name, NULL);
     item->type = G_FILE_TYPE_UNKNOWN;
 
