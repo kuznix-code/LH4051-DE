@@ -342,7 +342,7 @@ SESSION_OBJ := src/LH4051-SESSION/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
-.PHONY: all build clean run help show-target cpu-build subprojects wm fm session $(TARGETS)
+.PHONY: all build clean run help show-target cpu-build subprojects wm fm session wallpaper $(TARGETS)
 
 all: $(TARGET_BIN)
 
@@ -397,6 +397,16 @@ clean:
 	@$(MAKE) --no-print-directory -C src/LH4051-WM clean
 	@$(MAKE) --no-print-directory -C src/LH4051-FM clean
 	@$(MAKE) --no-print-directory -C src/LH4051-SESSION clean
+
+wallpaper:
+\t@mkdir -p images
+\t@if command -v magick >/dev/null 2>&1; then \\
+\t\tmagick "$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \\
+\telif command -v convert >/dev/null 2>&1; then \\
+\t\tconvert "$HOME/Downloads/vista-wallpaper-longhorn-4051-bliss.webp" -strip images/wallpapers.jpg; \\
+\telse \\
+\t\tprintf "%s\\n" "ImageMagick (magick/convert) is required to convert the wallpaper."; exit 1; \\
+\tfi
 
 run: all
 	@printf "$(GREEN)==> Running LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
