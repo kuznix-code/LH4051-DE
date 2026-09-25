@@ -1,4 +1,5 @@
 #include "longhorn.h"
+#include "LH4051-SESSION/session.h"
 #ifdef G_OS_UNIX
 #include <gio/gdesktopappinfo.h>
 #endif
@@ -57,11 +58,12 @@ void longhorn_toggle_start_menu(GtkApplication *a){if(!start_window){create_star
 void create_start_menu(GtkApplication *app){
     GtkWidget *w=gtk_application_window_new(app),*root,*left,*right,*scroll,*apps;
     GtkWindow *win=GTK_WINDOW(w); start_window=w;
-    gtk_layer_init_for_window(win); gtk_layer_set_layer(win,GTK_LAYER_SHELL_LAYER_OVERLAY);
-    gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_BOTTOM,TRUE); gtk_layer_set_anchor(win,GTK_LAYER_SHELL_EDGE_LEFT,TRUE);
-    gtk_layer_set_margin(win,GTK_LAYER_SHELL_EDGE_BOTTOM,LH4051_PANEL_HEIGHT);
-    gtk_layer_set_keyboard_mode(win,GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
-    gtk_layer_set_namespace(win,"lh4051-start-menu");
+    lh4051_session_setup_shell_window(win,LH4051_SHELL_POPUP);
+    if (lh4051_session_is_wayland()) {
+        gtk_layer_set_margin(win,GTK_LAYER_SHELL_EDGE_BOTTOM,LH4051_PANEL_HEIGHT);
+        gtk_layer_set_keyboard_mode(win,GTK_LAYER_SHELL_KEYBOARD_MODE_ON_DEMAND);
+        gtk_layer_set_namespace(win,"lh4051-start-menu");
+    }
     gtk_widget_set_visible(w,TRUE);
     gtk_window_set_default_size(win,760,540);
     root=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0); gtk_widget_add_css_class(root,"lh-start-menu"); gtk_window_set_child(win,root);
