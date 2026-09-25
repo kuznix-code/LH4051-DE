@@ -6,7 +6,7 @@ void load_shell_css(void) {
     gtk_css_provider_load_from_string(provider,
         "window { font-family: Sans; }"
         ".lh-desktop { background:#4f86ad; }"
-        ".lh-wallpaper { background:linear-gradient(180deg,#70b4d7 0%,#9bd1e5 45%,#d8c88b 72%,#8d9849 100%); }"
+        ".lh-wallpaper { background:linear-gradient(180deg,#70b4d7 0%,#9bd1e5 45%,#d8c88b 72%,#8d9849 100%); } .lh-wallpaper-fallback { background:linear-gradient(180deg,#70b4d7 0%,#9bd1e5 45%,#d8c88b 72%,#8d9849 100%); }"
         ".lh-watermark { color:rgba(255,255,255,.78); font-size:12px; padding:6px 10px; }"
         ".lh-panel { background:linear-gradient(180deg,#59646e 0%,#323b44 48%,#202830 100%); color:#fff; }"
         ".lh-task { min-height:34px; margin:4px 2px; padding:0 10px; border-radius:4px; border:1px solid rgba(255,255,255,.24); background:linear-gradient(#66727d,#303942); color:white; }"
