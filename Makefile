@@ -81,7 +81,7 @@ TARGET_CC_linux-ubuntu-s390x := s390x-linux-gnu-gcc
 TARGET_CC_linux-debian-s390x := s390x-linux-gnu-gcc
 TARGET_CC_linux-fedora-s390x := s390x-linux-gnu-gcc
 TARGET_CC_linux-generic-i686-pentium4 := i686-linux-gnu-gcc
-TARGET_CC_linux-generic-m32 := gcc
+TARGET_CC_linux-generic-m32r := m32r-linux-gnu-gcc
 TARGET_CC_linux-generic-m68k := m68k-linux-gnu-gcc
 TARGET_CC_linux-generic-alpha := alpha-linux-gnu-gcc
 TARGET_CC_linux-generic-or1k := or1k-linux-gnu-gcc
@@ -141,7 +141,6 @@ TARGET_CFLAGS_linux-alhp-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-alhp-v4 := -march=x86-64-v4
 TARGET_CFLAGS_linux-generic-i686-pentium4 := -march=pentium4
 TARGET_CFLAGS_linux-generic-x32 := -mx32
-TARGET_CFLAGS_linux-generic-m32 := -m32
 TARGET_CFLAGS_linux-generic-i486 := -march=i486
 TARGET_CFLAGS_linux-generic-i586 := -march=i586
 TARGET_CFLAGS_linux-generic-i686 := -march=i686
@@ -166,7 +165,7 @@ linux-generic-i486 linux-generic-i586 linux-generic-i686 linux-generic-i386 linu
 linux-generic-mips linux-generic-mipsel linux-generic-mips64 linux-generic-mips64el linux-debian-mips linux-debian-mipsel linux-debian-mips64el \
 linux-generic-ppc linux-generic-ppc64 linux-generic-ppc64el linux-generic-ppc64el-power8 linux-generic-ppc64el-power9 linux-debian-ppc linux-debian-ppc64 linux-debian-ppc64el \
 linux-generic-sh linux-generic-sh2 linux-generic-sh3 linux-generic-sh4 linux-generic-sh5 linux-generic-x32 linux-generic-s390 linux-generic-s390x \
-linux-ubuntu-s390x linux-debian-s390x linux-fedora-s390x linux-generic-i686-pentium4 linux-generic-m32 linux-generic-m68k linux-generic-alpha linux-generic-or1k linux-generic-ia64 linux-generic-mn10300 \
+linux-ubuntu-s390x linux-debian-s390x linux-fedora-s390x linux-generic-i686-pentium4 linux-generic-m32r linux-generic-m68k linux-generic-alpha linux-generic-or1k linux-generic-ia64 linux-generic-mn10300 \
 linux-generic-ppc-ps3 linux-generic-loong32 linux-generic-loong64 linux-debian-loong64 linux-arch-loong64 linux-generic-riscv32 linux-generic-riscv64 \
 linux-ubuntu-riscv64 linux-debian-riscv64 linux-fedora-riscv64 linux-arch-riscv64 linux-generic-hppa-1.0 linux-generic-hppa-1.1 $(LINUX_CPU_TARGETS)
 WINDOWS_TARGETS := win7-x86_64 win8-x86_64 win8.1-x86_64 win10-x86_64 win11-x86_64 win7-i686 win8-i686 win8.1-i686 win10-i686 win8-aarch64 win8.1-aarch64 win10-aarch64 win11-aarch64 win8-armv7 win8.1-armv7 win10-armv7
