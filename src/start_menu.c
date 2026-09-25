@@ -1,6 +1,6 @@
 #include "longhorn.h"
 static GtkWidget*start_window;
-void longhorn_hide_start_menu(void){if(start_window)gtk_window_hide(GTK_WINDOW(start_window));}
+void longhorn_hide_start_menu(void){if(start_window)gtk_widget_set_visible(start_window,FALSE);}
 void longhorn_show_start_menu(GtkApplication*a){if(!start_window)create_start_menu(a);else gtk_window_present(GTK_WINDOW(start_window));}
 void longhorn_toggle_start_menu(GtkApplication*a){if(!start_window){create_start_menu(a);return;}if(gtk_widget_get_visible(start_window))longhorn_hide_start_menu();else gtk_window_present(GTK_WINDOW(start_window));}
 static void open_docs(GtkButton*b,gpointer d){(void)b;create_file_explorer(GTK_APPLICATION(d),g_get_home_dir());longhorn_hide_start_menu();}
