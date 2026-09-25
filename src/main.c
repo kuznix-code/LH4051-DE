@@ -1,5 +1,5 @@
 #include "longhorn.h"
-#include "LH4051-SESSION.h"
+#include "LH4051-SESSION/session.h"
 
 void load_shell_css(void) {
     GtkCssProvider *provider=gtk_css_provider_new();
