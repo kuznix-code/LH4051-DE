@@ -403,15 +403,20 @@ $(CORE_OBJDIR)/%.o: src/%.c
 	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
 	@$(CC_SELECTED) $(CFLAGS) -c $< -o $@
 
-$(WM_OBJ):
-	@$(MAKE) --no-print-directory -C "$(WM_DIR)" ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)" all
-	@test -f "$@"
-$(FM_OBJ):
-	@$(MAKE) --no-print-directory -C "$(FM_DIR)" ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)" all
-	@test -f "$@"
-$(SESSION_OBJ):
-	@$(MAKE) --no-print-directory -C "$(SESSION_DIR)" ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)" all
-	@test -f "$@"
+$(WM_OBJ): src/LH4051-WM/wm.c src/LH4051-WM/wm.h
+	@mkdir -p $(@D)
+	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
+	@$(CC_SELECTED) $(CFLAGS) -c src/LH4051-WM/wm.c -o $@
+
+$(FM_OBJ): src/LH4051-FM/fm.c src/LH4051-FM/fm.h
+	@mkdir -p $(@D)
+	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
+	@$(CC_SELECTED) $(CFLAGS) -c src/LH4051-FM/fm.c -o $@
+
+$(SESSION_OBJ): src/LH4051-SESSION/session.c src/LH4051-SESSION/session.h
+	@mkdir -p $(@D)
+	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
+	@$(CC_SELECTED) $(CFLAGS) -c src/LH4051-SESSION/session.c -o $@
 
 subprojects: $(SUBPROJECT_OBJS)
 wm: $(WM_OBJ)
@@ -424,9 +429,6 @@ clean:
 	@$(MAKE) --no-print-directory -C "$(WM_DIR)" clean
 	@$(MAKE) --no-print-directory -C "$(FM_DIR)" clean
 	@$(MAKE) --no-print-directory -C "$(SESSION_DIR)" clean
-	@$(MAKE) --no-print-directory -C src/LH4051-WM clean
-	@$(MAKE) --no-print-directory -C src/LH4051-FM clean
-	@$(MAKE) --no-print-directory -C src/LH4051-SESSION clean
 
 
 run: all
