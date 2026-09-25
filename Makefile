@@ -398,11 +398,6 @@ clean:
 	@$(MAKE) --no-print-directory -C src/LH4051-FM clean
 	@$(MAKE) --no-print-directory -C src/LH4051-SESSION clean
 
-	@mkdir -p images
-	@if command -v magick >/dev/null 2>&1; then \
-	elif command -v convert >/dev/null 2>&1; then \
-	else \
-	fi
 
 run: all
 	@printf "$(GREEN)==> Running LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
