@@ -9,12 +9,22 @@ PKG_CONFIG ?= pkg-config
 # rather than a large shell case statement, avoiding shell quoting problems.
 HOST_OS := $(shell uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
 HOST_ARCH := $(shell uname -m 2>/dev/null)
-HOST_DISTRO := $(shell if [ -f /etc/os-release ]; then . /etc/os-release; printf '%s' "$$ID"; fi)
+HOST_DISTRO := $(shell if [ -f /etc/os-release ]; then . /etc/os-release; printf '%s' "$ID"; fi)
+HOST_CPU_VENDOR := $(shell awk -F: '/^vendor_id[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+HOST_CPU_FAMILY := $(shell awk -F: '/^cpu family[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+HOST_CPU_MODEL := $(shell awk -F: '/^model[[:space:]]*:/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+HOST_CPU_FLAGS := $(shell awk -F: '/^flags[[:space:]]*:/ {sub(/^[[:space:]]*/, "", $2); print $2; exit}' /proc/cpuinfo 2>/dev/null)
 
 ifeq ($(HOST_OS),linux)
   ifeq ($(HOST_ARCH),x86_64)
     ifeq ($(HOST_DISTRO),cachyos)
-      DEFAULT_TARGET := linux-cachy
+      ifneq (,$(findstring avx512f,$(HOST_CPU_FLAGS)))
+        DEFAULT_TARGET := linux-cachy-v4
+      else ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
+        DEFAULT_TARGET := linux-cachy-v3
+      else
+        DEFAULT_TARGET := linux-cachy
+      endif
     else ifeq ($(HOST_DISTRO),ubuntu)
       DEFAULT_TARGET := linux-ubuntu-x86_64
     else ifeq ($(HOST_DISTRO),debian)
@@ -65,6 +75,31 @@ else ifeq ($(HOST_OS),freebsd)
   endif
 else
   DEFAULT_TARGET := generic
+endif
+
+# CachyOS CPU-family hint for GCC-specific builds.
+ifeq ($(HOST_CPU_VENDOR),AuthenticAMD)
+  ifeq ($(HOST_CPU_FAMILY),15)
+    CACHY_CPU_TARGET := linux-cachy-excavator
+  else ifeq ($(HOST_CPU_FAMILY),17)
+    CACHY_CPU_TARGET := linux-cachy-znver1
+  else ifeq ($(HOST_CPU_FAMILY),19)
+    CACHY_CPU_TARGET := linux-cachy-znver3
+  else ifeq ($(HOST_CPU_FAMILY),25)
+    CACHY_CPU_TARGET := linux-cachy-znver3
+  endif
+else ifeq ($(HOST_CPU_VENDOR),GenuineIntel)
+  ifneq (,$(filter 42 45,$(HOST_CPU_MODEL)))
+    CACHY_CPU_TARGET := linux-cachy-sandybridge
+  else ifneq (,$(filter 58 62,$(HOST_CPU_MODEL)))
+    CACHY_CPU_TARGET := linux-cachy-ivybridge
+  else ifeq ($(HOST_CPU_MODEL),60)
+    CACHY_CPU_TARGET := linux-cachy-haswell
+  else ifneq (,$(filter 61 71 79,$(HOST_CPU_MODEL)))
+    CACHY_CPU_TARGET := linux-cachy-broadwell
+  else ifneq (,$(filter 78 94 85 86,$(HOST_CPU_MODEL)))
+    CACHY_CPU_TARGET := linux-cachy-skylake
+  endif
 endif
 
 TARGET ?= $(DEFAULT_TARGET)
@@ -219,6 +254,8 @@ TARGET_CC_linux-cachy-v3 := gcc
 TARGET_CC_linux-cachy-v4 := gcc
 TARGET_CFLAGS_linux-cachy-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-cachy-v4 := -march=x86-64-v4
+TARGET_CC_linux-cachy-excavator := gcc
+TARGET_CFLAGS_linux-cachy-excavator := -march=bdver4
 TARGET_CFLAGS_linux-alhp-v2 := -march=x86-64-v2
 TARGET_CFLAGS_linux-alhp-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-alhp-v4 := -march=x86-64-v4
