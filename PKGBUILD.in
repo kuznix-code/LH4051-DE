@@ -1,0 +1,18 @@
+# LH4051-DE Arch Linux package template
+pkgname=lh4051-de
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Longhorn 4051-inspired desktop environment'
+arch=('@ARCH@')
+url='https://github.com/kuznix-code/LH4051-DE'
+license=('GPL-3.0-or-later')
+depends=('gtk4' 'gtk4-layer-shell')
+source=()
+
+build() {
+    make TARGET=linux-arch-x86_64
+}
+
+package() {
+    install -Dm755 build/lh4051-de "$pkgdir/usr/bin/lh4051-de"
+}
