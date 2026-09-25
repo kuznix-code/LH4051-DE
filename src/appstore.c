@@ -44,6 +44,7 @@ typedef struct {
     GtkWidget *output;
     GtkWidget *status;
     GtkWidget *close_button;
+    GtkWindow *window;
     GSubprocess *process;
     GDataInputStream *stdout_stream;
     GDataInputStream *stderr_stream;
@@ -55,7 +56,7 @@ static void operation_append(LHPackageOperation *op, const char *prefix, const c
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(op->output));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
-    char *text = g_strdup_printf("%s%s\\n", prefix ? prefix : "", line);
+    char *text = g_strdup_printf("%s%s\n", prefix ? prefix : "", line);
     gtk_text_buffer_insert(buffer, &end, text, -1);
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(op->output), &end, 0.0, FALSE, 0.0, 1.0);
@@ -111,9 +112,8 @@ static void operation_finished(GObject *source, GAsyncResult *result, gpointer u
         g_free(message);
     }
     gtk_widget_set_sensitive(op->close_button, TRUE);
-    g_clear_object(&op->stdout_stream);
-    g_clear_object(&op->stderr_stream);
-    g_clear_object(&op->process);
+    if (op->window)
+        gtk_window_set_deletable(op->window, TRUE);
 }
 
 static LHPackageOperation *package_log(GtkWindow *parent, const char *action,
@@ -148,6 +148,7 @@ static LHPackageOperation *package_log(GtkWindow *parent, const char *action,
     gtk_text_view_set_editable(GTK_TEXT_VIEW(output), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(output), FALSE);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(output), TRUE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(output), GTK_WRAP_NONE);
     gtk_widget_set_vexpand(scroll, TRUE);
     gtk_widget_set_vexpand(output, TRUE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), output);
@@ -170,6 +171,7 @@ static LHPackageOperation *package_log(GtkWindow *parent, const char *action,
     gtk_window_set_default_size(w, 760, 520);
     gtk_window_set_transient_for(w, parent);
     gtk_window_set_child(w, root);
+    gtk_window_set_deletable(w, FALSE);
     gtk_widget_set_sensitive(close, FALSE);
     g_signal_connect_swapped(close, "clicked", G_CALLBACK(gtk_window_destroy), w);
     gtk_window_present(w);
@@ -179,6 +181,7 @@ static LHPackageOperation *package_log(GtkWindow *parent, const char *action,
     op->output = output;
     op->status = status;
     op->close_button = close;
+    op->window = w;
     return op;
 }
 
@@ -193,6 +196,7 @@ static void package_command(const char *action, const char *package, GtkWindow *
         operation_append(op, "[error] ", "No supported package manager was found.");
         gtk_label_set_text(GTK_LABEL(op->status), "No package manager found");
         gtk_widget_set_sensitive(op->close_button, TRUE);
+        gtk_window_set_deletable(op->window, TRUE);
         g_free(op);
         return;
     }
@@ -226,6 +230,7 @@ static void package_command(const char *action, const char *package, GtkWindow *
         operation_append(op, "[error] ", error ? error->message : "Could not start package manager.");
         gtk_label_set_text(GTK_LABEL(op->status), "Could not start package manager");
         gtk_widget_set_sensitive(op->close_button, TRUE);
+        gtk_window_set_deletable(op->window, TRUE);
         g_clear_error(&error);
         g_free(op);
         return;
