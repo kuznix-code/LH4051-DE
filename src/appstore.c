@@ -1,6 +1,6 @@
 #include "longhorn.h"
 static void close_store(GtkButton*b,gpointer d){(void)b;gtk_window_destroy(GTK_WINDOW(d));}
-static void search_pk(GtkButton*b,gpointer d){
+static void search_pk(GtkButton*b,gpointer d){ (void)d;
     GtkWidget *entry=g_object_get_data(G_OBJECT(b),"entry"),*status=g_object_get_data(G_OBJECT(b),"status");
     const char *q=gtk_editable_get_text(GTK_EDITABLE(entry));
     if(!q||!*q){gtk_label_set_text(GTK_LABEL(status),"Enter a package name.");return;}
