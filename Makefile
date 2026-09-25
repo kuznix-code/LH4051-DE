@@ -168,7 +168,7 @@ linux-generic-ppc linux-generic-ppc64 linux-generic-ppc64el linux-generic-ppc64e
 linux-generic-sh linux-generic-sh2 linux-generic-sh3 linux-generic-sh4 linux-generic-sh5 linux-generic-x32 linux-generic-s390 linux-generic-s390x \
 linux-ubuntu-s390x linux-debian-s390x linux-fedora-s390x linux-generic-i686-pentium4 linux-generic-m32 linux-generic-m68k linux-generic-alpha linux-generic-or1k linux-generic-ia64 linux-generic-mn10300 \
 linux-generic-ppc-ps3 linux-generic-loong32 linux-generic-loong64 linux-debian-loong64 linux-arch-loong64 linux-generic-riscv32 linux-generic-riscv64 \
-linux-ubuntu-riscv64 linux-debian-riscv64 linux-fedora-riscv64 linux-arch-riscv64 linux-generic-hppa-1.0 linux-generic-hppa-1.1
+linux-ubuntu-riscv64 linux-debian-riscv64 linux-fedora-riscv64 linux-arch-riscv64 linux-generic-hppa-1.0 linux-generic-hppa-1.1 $(LINUX_CPU_TARGETS)
 WINDOWS_TARGETS := win7-x86_64 win8-x86_64 win8.1-x86_64 win10-x86_64 win11-x86_64 win7-i686 win8-i686 win8.1-i686 win10-i686 win8-aarch64 win8.1-aarch64 win10-aarch64 win11-aarch64 win8-armv7 win8.1-armv7 win10-armv7
 DARWIN_TARGETS := darwin-x86_64 darwin-i686 darwin-aarch64 darwin-ppc64 darwin-ppc
 FREEBSD_TARGETS := freebsd-x86_64 freebsd-aarch64 freebsd-i686
@@ -218,11 +218,11 @@ $(CORE_OBJDIR)/%.o: src/%.c
 	@$(CC_SELECTED) $(CFLAGS) -c $< -o $@
 
 $(WM_OBJ):
-	@$(MAKE) --no-print-directory -C src/LH4051-WM ARCH="$(TARGET)" VERSION="$(VERSION)"
+	@$(MAKE) --no-print-directory -C src/LH4051-WM ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)"
 $(FM_OBJ):
-	@$(MAKE) --no-print-directory -C src/LH4051-FM ARCH="$(TARGET)" VERSION="$(VERSION)"
+	@$(MAKE) --no-print-directory -C src/LH4051-FM ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)"
 $(SESSION_OBJ):
-	@$(MAKE) --no-print-directory -C src/LH4051-SESSION ARCH="$(TARGET)" VERSION="$(VERSION)"
+	@$(MAKE) --no-print-directory -C src/LH4051-SESSION ARCH="$(TARGET)" VERSION="$(VERSION)" CC="$(CC_SELECTED)" CFLAGS="$(CFLAGS)"
 
 subprojects: $(SUBPROJECT_OBJS)
 wm: $(WM_OBJ)
