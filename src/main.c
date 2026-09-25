@@ -28,6 +28,9 @@ void load_shell_css(void) {
 static void on_activate(GtkApplication *app,gpointer user_data){
     (void)user_data;
     g_print("Starting LH4051-DE %s session...\n",LH4051_VERSION);
+    GtkSettings *settings = gtk_settings_get_default();
+    if (settings)
+        g_object_set(settings, "gtk-application-prefer-dark-theme", TRUE, NULL);
     load_shell_css();
     lh4051_session_start(app);
 }
