@@ -16,6 +16,7 @@ static void append_text(GtkTextBuffer *buffer, const char *text)
     gtk_text_buffer_insert(buffer, &end, text ? text : "", -1);
 }
 
+#ifdef G_OS_UNIX
 static void launch_store_app(GtkButton *button, gpointer data)
 {
     const char *id = g_object_get_data(G_OBJECT(button), "lh-app-id");
@@ -32,6 +33,9 @@ static void launch_store_app(GtkButton *button, gpointer data)
     }
     g_object_unref(info);
 }
+
+}
+#endif
 
 static void populate_installed_apps(GtkWidget *box)
 {
