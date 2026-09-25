@@ -342,7 +342,7 @@ SESSION_OBJ := src/LH4051-SESSION/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
-.PHONY: all build clean run help show-target cpu-build subprojects wm fm session wallpaper $(TARGETS)
+.PHONY: all build clean run dist help show-target cpu-build subprojects wm fm session wallpaper $(TARGETS)
 
 all: $(TARGET_BIN)
 
@@ -403,6 +403,17 @@ run: all
 	@printf "$(GREEN)==> Running LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
 	@./$(TARGET_BIN)
 
+dist:
+	@if ! command -v makepkg >/dev/null 2>&1 || ! command -v pacman >/dev/null 2>&1; then \
+		printf "$(RED)make dist is only supported on pacman/makepkg systems$(RESET)\n"; \
+		exit 2; \
+	fi
+	@ARCH="$(uname -m)"; \
+	printf "$(CYAN)==> Generating PKGBUILD [arch=$ARCH]$(RESET)\n"; \
+	sed -e "s/@VERSION@/$(VERSION)/g" -e "s/@ARCH@/$ARCH/g" PKGBUILD.in > PKGBUILD; \
+	printf "$(GREEN)==> Building Arch package with makepkg$(RESET)\n"; \
+	makepkg -f
+
 help:
 	@printf "$(CYAN)LH4051-DE $(VERSION)$(RESET)\n"
 	@printf "  Default target: $(GREEN)$(TARGET)$(RESET) (auto-detected)\n"
@@ -411,7 +422,7 @@ help:
 	@printf "  CPU build:       $(GREEN)make cpu-build CPU=skylake$(RESET)\n"
 
 	@printf "  Run:             $(GREEN)make run$(RESET)\n"
-	@printf "  Clean:           $(GREEN)make clean$(RESET)\n"
+	@printf "  Package (pacman):$(GREEN) make dist$(RESET)\n"	@printf "  Clean:           $(GREEN)make clean$(RESET)\n"
 	@printf "  Linux targets:  %s\n" "$(LINUX_TARGETS)"
 	@printf "  Windows targets:%s\n" "$(WINDOWS_TARGETS)"
 	@printf "  macOS targets:  %s\n" "$(DARWIN_TARGETS)"
