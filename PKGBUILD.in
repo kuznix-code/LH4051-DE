@@ -10,9 +10,11 @@ depends=('gtk4' 'gtk4-layer-shell')
 source=()
 
 build() {
+    cd "$startdir"
     make TARGET=linux-arch-x86_64
 }
 
 package() {
+    cd "$startdir"
     install -Dm755 build/lh4051-de "$pkgdir/usr/bin/lh4051-de"
 }
