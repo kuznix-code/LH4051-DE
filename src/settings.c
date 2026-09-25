@@ -1,4 +1,5 @@
 #include "longhorn.h"
+#include "LH4051-SESSION/session.h"
 
 static void close_settings(GtkButton *b, gpointer d)
 {
