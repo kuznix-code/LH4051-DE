@@ -326,8 +326,11 @@ TARGET_CFLAGS := $(TARGET_CFLAGS_$(TARGET))
 
 BASE_CFLAGS := -Wall -Wextra -O3 -pipe -fno-plt -fexceptions \
 -Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
--fstack-clash-protection -fcf-protection -DVERSION=\"$(VERSION)\"
-CFLAGS := $(BASE_CFLAGS) $(TARGET_CFLAGS) $(GTK_CFLAGS) -Isrc
+-fstack-clash-protection -DVERSION=\"$(VERSION)\"
+# x86-only control-flow protection. Keep architecture-specific options out of
+# non-x86 cross builds (AArch64, ARM, RISC-V, etc.).
+TARGET_X86_SECURITY_CFLAGS := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32,$(TARGET)),-fcf-protection)
+CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS) $(GTK_CFLAGS) -Isrc
 CXXFLAGS := $(CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
 LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
 -Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
