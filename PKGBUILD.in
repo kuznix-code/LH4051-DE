@@ -31,11 +31,6 @@ pkgver() {
     printf '%s.r%s.%s' "$tag" "$commits" "$short"
 }
 
-prepare() {
-    cd "$srcdir/LH4051-DE"
-    git config --global --add safe.directory "$PWD"
-}
-
 build() {
     cd "$srcdir/LH4051-DE"
     make
