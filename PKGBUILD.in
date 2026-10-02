@@ -14,6 +14,11 @@ source=("git+https://github.com/kuznix-code/LH4051-DE.git")
 sha256sums=('SKIP')
 
 pkgver() {
+    if [[ -n "${LH4051_STABLE_VERSION:-}" ]]; then
+        printf "%s" "$LH4051_STABLE_VERSION"
+        return
+    fi
+
     cd "$srcdir/LH4051-DE"
 
     # Git snapshot version: <latest-tag>.r<commits-since-tag>.<short-head>
