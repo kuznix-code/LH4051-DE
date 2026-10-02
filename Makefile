@@ -405,7 +405,7 @@ SESSION_OBJ := $(SESSION_DIR)/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
-.PHONY: all build clean run dist dist-stable help show-target cpu-build subprojects wm fm session sessions data wallpaper $(TARGETS)
+.PHONY: all build install clean run dist dist-stable help show-target cpu-build subprojects wm fm session sessions data wallpaper $(TARGETS)
 
 all: $(TARGET_BIN)
 
@@ -494,6 +494,15 @@ clean:
 run: all
 	@printf "$(GREEN)==> Running LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
 	@./$(TARGET_BIN)
+
+PREFIX ?= /usr
+DESTDIR ?=
+
+install: all sessions data
+	@printf "$(GREEN)==> Installing LH4051-DE $(VERSION) to $(DESTDIR)$(PREFIX)$(RESET)\n"
+	@install -Dm755 "$(TARGET_BIN)" "$(DESTDIR)$(PREFIX)/bin/lh4051-de"
+	@install -Dm644 "$(DATA_WAYLAND)" "$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop"
+	@install -Dm644 "$(DATA_X11)" "$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop"
 
 dist:
 	@printf "$(GREEN)==> Running full build before packaging$(RESET)\n"
