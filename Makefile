@@ -330,7 +330,15 @@ BASE_CFLAGS := -Wall -Wextra -O3 -pipe -fno-plt -fexceptions \
 # x86-only control-flow protection. Keep architecture-specific options out of
 # non-x86 cross builds (AArch64, ARM, RISC-V, etc.).
 TARGET_X86_SECURITY_CFLAGS := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32,$(TARGET)),-fcf-protection)
-CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS) $(GTK_CFLAGS) -Isrc
+
+# Some build environments export CFLAGS globally. Never let x86-only SIMD/FPU
+# options leak into non-x86 targets: GCC only defines these options for x86.
+# Keep the filtering target-aware so explicit x86 builds retain their flags.
+USER_CFLAGS := $(CFLAGS)
+X86_ONLY_CFLAGS := -mfpmath=sse -mfpmath=sse2 -msse -msse2
+TARGET_IS_X86 := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32 win%-x86_64 win%-i686 darwin-x86_64 darwin-i686 freebsd-x86_64 freebsd-i686 netbsd-x86_64 netbsd-i686 openbsd-x86_64 openbsd-i686 dragonfly-x86_64 generic-x86_64 generic-i686,$(TARGET)),yes,no)
+FILTERED_USER_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(USER_CFLAGS),$(filter-out $(X86_ONLY_CFLAGS),$(USER_CFLAGS)))
+override CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS) $(FILTERED_USER_CFLAGS) $(GTK_CFLAGS) -Isrc
 CXXFLAGS := $(CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
 LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
 -Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
