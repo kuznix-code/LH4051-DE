@@ -338,7 +338,14 @@ USER_CFLAGS := $(CFLAGS)
 X86_ONLY_CFLAGS := -mfpmath=sse -mfpmath=sse2 -msse -msse2
 TARGET_IS_X86 := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32 win%-x86_64 win%-i686 darwin-x86_64 darwin-i686 freebsd-x86_64 freebsd-i686 netbsd-x86_64 netbsd-i686 openbsd-x86_64 openbsd-i686 dragonfly-x86_64 generic-x86_64 generic-i686,$(TARGET)),yes,no)
 FILTERED_USER_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(USER_CFLAGS),$(filter-out $(X86_ONLY_CFLAGS),$(USER_CFLAGS)))
-override CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS) $(FILTERED_USER_CFLAGS) $(GTK_CFLAGS) -Isrc
+TARGET_BASE_CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS) $(FILTERED_USER_CFLAGS) $(GTK_CFLAGS) -Isrc
+override CFLAGS := $(TARGET_BASE_CFLAGS)
+
+# Never pass x86 SSE/FPU switches to non-x86 compilers, even when they arrive
+# through a recursive make invocation or an inherited build environment.
+NON_X86_CFLAGS := $(filter-out -mfpmath=sse -mfpmath=sse2 -msse -msse2,$(TARGET_BASE_CFLAGS))
+EFFECTIVE_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(TARGET_BASE_CFLAGS),$(NON_X86_CFLAGS))
+
 CXXFLAGS := $(CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
 LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
 -Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
@@ -412,22 +419,22 @@ $(TARGET_BIN): $(CORE_OBJ) $(SUBPROJECT_OBJS)
 $(CORE_OBJDIR)/%.o: src/%.c
 	@mkdir -p $(@D)
 	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(CFLAGS) -c $< -o $@
+	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c $< -o $@
 
 $(WM_OBJ): src/LH4051-WM/wm.c src/LH4051-WM/wm.h
 	@mkdir -p $(@D)
 	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(CFLAGS) -c src/LH4051-WM/wm.c -o $@
+	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c src/LH4051-WM/wm.c -o $@
 
 $(FM_OBJ): src/LH4051-FM/fm.c src/LH4051-FM/fm.h
 	@mkdir -p $(@D)
 	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(CFLAGS) -c src/LH4051-FM/fm.c -o $@
+	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c src/LH4051-FM/fm.c -o $@
 
 $(SESSION_OBJ): src/LH4051-SESSION/session.c src/LH4051-SESSION/session.h
 	@mkdir -p $(@D)
 	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(CFLAGS) -c src/LH4051-SESSION/session.c -o $@
+	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c src/LH4051-SESSION/session.c -o $@
 
 subprojects: $(SUBPROJECT_OBJS)
 wm: $(WM_OBJ)
