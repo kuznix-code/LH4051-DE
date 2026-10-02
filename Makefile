@@ -324,7 +324,26 @@ TARGETS := $(LINUX_TARGETS) $(WINDOWS_TARGETS) $(DARWIN_TARGETS) $(FREEBSD_TARGE
 CC_SELECTED := $(or $(TARGET_CC_$(TARGET)),$(CC))
 TARGET_CFLAGS := $(TARGET_CFLAGS_$(TARGET))
 
-BASE_CFLAGS := -Wall -Wextra -O3 -pipe -fno-plt -fexceptions \
+# Distribution/toolchain-specific hardening and optimization profiles.
+# The selected TARGET_CFLAGS value supplies the target-specific -march.
+CACHY_CFLAGS := $(TARGET_CFLAGS) -O3 -pipe -fno-plt -fexceptions \
+-Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
+-fstack-clash-protection -fcf-protection
+CACHY_CXXFLAGS := $(CACHY_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
+
+ARCH_CFLAGS := $(TARGET_CFLAGS) -mtune=generic -O2 -pipe -fno-plt -fexceptions \
+-Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
+-fstack-clash-protection -fcf-protection \
+-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer
+ARCH_CXXFLAGS := $(ARCH_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
+
+ALHP_CFLAGS := $(TARGET_CFLAGS) -O3 -pipe -fno-plt -fexceptions \
+-Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
+-fstack-clash-protection -fcf-protection \
+-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -mpclmul
+ALHP_CXXFLAGS := $(ALHP_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
+
+BASE_CFLAGS := -Wall -Wextra -pipe -fno-plt -fexceptions \
 -Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
 -fstack-clash-protection -DVERSION=\"$(VERSION)\"
 # x86-only control-flow protection. Keep architecture-specific options out of
@@ -338,18 +357,40 @@ USER_CFLAGS := $(CFLAGS)
 X86_ONLY_CFLAGS := -mfpmath=sse -mfpmath=sse2 -msse -msse2
 TARGET_IS_X86 := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32 win%-x86_64 win%-i686 darwin-x86_64 darwin-i686 freebsd-x86_64 freebsd-i686 netbsd-x86_64 netbsd-i686 openbsd-x86_64 openbsd-i686 dragonfly-x86_64 generic-x86_64 generic-i686,$(TARGET)),yes,no)
 FILTERED_USER_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(USER_CFLAGS),$(filter-out $(X86_ONLY_CFLAGS),$(USER_CFLAGS)))
-TARGET_BASE_CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS) $(FILTERED_USER_CFLAGS) $(GTK_CFLAGS) -Isrc
+TARGET_PROFILE_CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS)
+TARGET_PROFILE_CXXFLAGS := $(TARGET_PROFILE_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
+TARGET_PROFILE_LTOFLAGS := -flto=auto
+
+# linux-cachy-* profile.
+ifneq (,$(filter linux-cachy%,$(TARGET)))
+  TARGET_PROFILE_CFLAGS := $(CACHY_CFLAGS)
+  TARGET_PROFILE_CXXFLAGS := $(CACHY_CXXFLAGS)
+endif
+
+# linux-arch-* x86 profile. Non-x86 Arch targets keep the generic profile.
+ifneq (,$(filter linux-arch-x86_64 linux-arch-x86_64v% linux-arch-i%,$(TARGET)))
+  TARGET_PROFILE_CFLAGS := $(ARCH_CFLAGS)
+  TARGET_PROFILE_CXXFLAGS := $(ARCH_CXXFLAGS)
+endif
+
+# ALHP x86_64-v2/v3/v4 profiles.
+ifneq (,$(filter linux-alhp-v%,$(TARGET)))
+  TARGET_PROFILE_CFLAGS := $(ALHP_CFLAGS)
+  TARGET_PROFILE_CXXFLAGS := $(ALHP_CXXFLAGS)
+  TARGET_PROFILE_LTOFLAGS := -flto=auto -falign-functions=32
+endif
+
+TARGET_BASE_CFLAGS := $(TARGET_PROFILE_CFLAGS) $(FILTERED_USER_CFLAGS) $(GTK_CFLAGS) -Isrc
 override CFLAGS := $(TARGET_BASE_CFLAGS)
+override CXXFLAGS := $(TARGET_PROFILE_CXXFLAGS) $(FILTERED_USER_CFLAGS)
+override LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
+-Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
+override LTOFLAGS := $(TARGET_PROFILE_LTOFLAGS)
 
 # Never pass x86 SSE/FPU switches to non-x86 compilers, even when they arrive
 # through a recursive make invocation or an inherited build environment.
 NON_X86_CFLAGS := $(filter-out -mfpmath=sse -mfpmath=sse2 -msse -msse2,$(TARGET_BASE_CFLAGS))
 EFFECTIVE_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(TARGET_BASE_CFLAGS),$(NON_X86_CFLAGS))
-
-CXXFLAGS := $(CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
-LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
--Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
-LTOFLAGS := -flto=auto
 
 CORE_SRC := src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/settings.c src/appstore.c src/explorer.c
 CORE_OBJDIR := build/core
@@ -363,7 +404,7 @@ SESSION_OBJ := $(SESSION_DIR)/build/session.o
 SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
 TARGET_BIN := build/lh4051-de
 
-.PHONY: all build clean run dist help show-target cpu-build subprojects wm fm session sessions data wallpaper $(TARGETS)
+.PHONY: all build clean run dist dist-stable help show-target cpu-build subprojects wm fm session sessions data wallpaper $(TARGETS)
 
 all: $(TARGET_BIN)
 
@@ -460,9 +501,21 @@ dist:
 		printf "$(RED)make dist is only supported on pacman/makepkg systems$(RESET)\n"; \
 		exit 2; \
 	fi
-	@printf "$(CYAN)==> Generating PKGBUILD [arch=$(HOST_ARCH)]$(RESET)\n"; \
-	sed -e "s/@VERSION@/$(VERSION)/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
+	@printf "$(CYAN)==> Generating git PKGBUILD [arch=$(HOST_ARCH)]$(RESET)\n"; \
+	sed -e "s/@PKGVER@/0.0.0.r0.git/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
 	printf "$(GREEN)==> Building Arch package with makepkg$(RESET)\n"; \
+	makepkg -f
+
+dist-stable:
+	@printf "$(GREEN)==> Running stable build $(VERSION) before packaging$(RESET)\n"
+	@$(MAKE) --no-print-directory TARGET="$(TARGET)" all sessions data
+	@if ! command -v makepkg >/dev/null 2>&1 || ! command -v pacman >/dev/null 2>&1; then \
+		printf "$(RED)make dist-stable is only supported on pacman/makepkg systems$(RESET)\n"; \
+		exit 2; \
+	fi
+	@printf "$(CYAN)==> Generating stable PKGBUILD [version=$(VERSION), arch=$(HOST_ARCH)]$(RESET)\n"; \
+	sed -e "s/@PKGVER@/$(VERSION)/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
+	printf "$(GREEN)==> Building stable Arch package with makepkg$(RESET)\n"; \
 	makepkg -f
 
 help:
