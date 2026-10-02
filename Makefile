@@ -273,6 +273,7 @@ TARGET_CFLAGS_linux-cachy-v4 := -march=x86-64-v4
 TARGET_CC_linux-cachy-excavator := gcc
 TARGET_CFLAGS_linux-cachy-excavator := -march=bdver4
 TARGET_CFLAGS_linux-alhp-v2 := -march=x86-64-v2
+TARGET_CFLAGS_linux-arch-x86_64 := -march=x86-64
 TARGET_CFLAGS_linux-alhp-v3 := -march=x86-64-v3
 TARGET_CFLAGS_linux-alhp-v4 := -march=x86-64-v4
 TARGET_CFLAGS_linux-generic-i686-pentium4 := -march=pentium4
