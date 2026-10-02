@@ -1,10 +1,6 @@
 #include "wm.h"
-#ifdef GDK_WINDOWING_X11
-#include <gdk/x11/gdkx.h>
-#endif
-#ifdef GDK_WINDOWING_WAYLAND
-#include <gdk/wayland/gdkwayland.h>
-#endif
+
+#include <string.h>
 
 typedef struct { GtkWindow *window; char *title; } LHWindow;
 static GPtrArray *windows;
@@ -21,8 +17,27 @@ void lh4051_wm_init(void){ ensure_store(); }
 void lh4051_wm_set_backend(GdkDisplay *display)
 {
     g_free(backend_name);
-    backend_name = g_strdup(display && GDK_IS_WAYLAND_DISPLAY(display) ? "wayland" :
-                            (display && GDK_IS_X11_DISPLAY(display) ? "x11" : "gtk"));
+    backend_name = NULL;
+
+    if (!display) {
+        backend_name = g_strdup("unknown");
+        return;
+    }
+
+    /*
+     * Keep WM backend detection on the generic GDK API. Do not include
+     * gdk/x11/gdkx.h or gdk/wayland/gdkwayland.h here: those backend
+     * headers make cross-compilation depend on the host's GTK backend
+     * development headers.
+     */
+    const char *name = gdk_display_get_name(display);
+    if (name && (g_str_has_prefix(name, "wayland-") ||
+                 g_str_has_prefix(name, "wayland")))
+        backend_name = g_strdup("wayland");
+    else if (name && (name[0] == ':' || g_str_has_prefix(name, "localhost:")))
+        backend_name = g_strdup("x11");
+    else
+        backend_name = g_strdup("gtk");
 }
 
 void lh4051_wm_shutdown(void)
