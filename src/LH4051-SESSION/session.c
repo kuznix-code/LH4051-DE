@@ -11,8 +11,19 @@ void lh4051_session_start(GtkApplication *app)
 {
     GdkDisplay *display = gdk_display_get_default();
     session_app = app;
-    session_wayland = display && GDK_IS_WAYLAND_DISPLAY(display);
-    session_x11 = display && GDK_IS_X11_DISPLAY(display);
+    session_wayland = FALSE;
+    session_x11 = FALSE;
+
+    /* Detect the backend using only generic GDK APIs. This keeps
+     * cross-compilation independent of host X11/Wayland headers. */
+    if (display) {
+        const char *name = gdk_display_get_name(display);
+        session_wayland = name &&
+                          (g_str_has_prefix(name, "wayland-") ||
+                           g_str_has_prefix(name, "wayland"));
+        session_x11 = name &&
+                      (name[0] == ':' || g_str_has_prefix(name, "localhost:"));
+    }
 
     g_print("LH4051 session backend: %s\n",
             session_wayland ? "Wayland" : (session_x11 ? "X11" : "GTK"));
