@@ -516,7 +516,7 @@ dist-stable:
 	@printf "$(CYAN)==> Generating stable PKGBUILD [version=$(VERSION), arch=$(HOST_ARCH)]$(RESET)\n"; \
 	sed -e "s/@PKGVER@/$(VERSION)/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
 	printf "$(GREEN)==> Building stable Arch package with makepkg$(RESET)\n"; \
-	makepkg -f
+	LH4051_STABLE_VERSION="$(VERSION)" makepkg -f
 
 help:
 	@printf "$(CYAN)LH4051-DE $(VERSION)$(RESET)\n"
