@@ -15,20 +15,25 @@ sha256sums=('SKIP')
 
 pkgver() {
     cd "$srcdir/LH4051-DE"
-    printf '%s' "$(git describe --tags --abbrev=0 2>/dev/null || echo 0)"
-    # This function is replaced by make dist-stable for stable releases.
+
+    # Git snapshot version: <latest-tag>.r<commits-since-tag>.<short-head>
+    local tag commits short
+    tag="$(git describe --tags --abbrev=0 2>/dev/null || printf '0.0.0')"
+    tag="${tag#v}"
+    tag="$(printf '%s' "$tag" | sed 's/[^A-Za-z0-9.+_]/./g')"
+    commits="$(git rev-list --count "$(git describe --tags --abbrev=0 2>/dev/null || true)"..HEAD 2>/dev/null || printf '0')"
+    short="$(git rev-parse --short=7 HEAD)"
+    printf '%s.r%s.%s' "$tag" "$commits" "$short"
 }
 
 prepare() {
     cd "$srcdir/LH4051-DE"
     git config --global --add safe.directory "$PWD"
-    # Ensure clean generated build data exists before packaging.
-    make clean >/dev/null 2>&1 || true
 }
 
 build() {
     cd "$srcdir/LH4051-DE"
-    make TARGET=linux-arch-x86_64 all sessions data
+    make
 }
 
 package() {
@@ -36,6 +41,6 @@ package() {
     make DESTDIR="$pkgdir" PREFIX="/usr" install
 }
 
-# Stable release packaging override:
+# Stable releases:
 #   make dist-stable
-#   PKGBUILD generated with pkgver @VERSION@ and no git-snapshot metadata
+# generates a PKGBUILD with pkgver=@VERSION@ and builds it with makepkg.
