@@ -390,8 +390,8 @@ installer-macos: dist-macos
 
 # "LH4051-DE Installer" for Windows (Inno Setup, run after dist-win64)
 installer-win:
-	@iscc /Qp /DAppVersion=$(PKG_VERSION) /DArch=$(WIN_ARCH) \
-	  "/DBundleDir=$(CURDIR)/dist/$(NAME)-$(PKG_VERSION)-win-$(WIN_ARCH)" "/DOutputFolder=$(CURDIR)/dist" installer/lh4051-de.iss
+	@LH_VERSION="$(PKG_VERSION)" LH_ARCH="$(WIN_ARCH)" LH_BUNDLE="$(CURDIR)/dist/$(NAME)-$(PKG_VERSION)-win-$(WIN_ARCH)" \
+	  LH_OUT="$(CURDIR)/dist" iscc /Qp installer/lh4051-de.iss
 
 dist-win64:
 	@$(MAKE) --no-print-directory win64

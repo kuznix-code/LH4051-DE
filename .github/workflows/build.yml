@@ -182,12 +182,11 @@ jobs:
         run: |
           $bundle = Join-Path $PWD "dist\lh4051-de-$env:PKG_VERSION-win-${{ matrix.arch }}"
           if (-not (Test-Path $bundle)) { Get-ChildItem dist; throw "bundle dir missing: $bundle" }
-          "ISS_OPTIONS=/DAppVersion=$env:PKG_VERSION /DArch=${{ matrix.arch }} /DBundleDir=$bundle /DOutputFolder=$PWD\dist /FLH4051-DE-Installer-$env:PKG_VERSION-win-${{ matrix.arch }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "LH_VERSION=$env:PKG_VERSION","LH_ARCH=${{ matrix.arch }}","LH_BUNDLE=$bundle","LH_OUT=$PWD\dist" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: LH4051-DE Installer (Inno Setup)
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
         with:
           path: installer/lh4051-de.iss
-          options: ${{ env.ISS_OPTIONS }}
       - name: List output
         shell: pwsh
         run: Get-ChildItem dist

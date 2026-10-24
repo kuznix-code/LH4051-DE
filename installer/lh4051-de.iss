@@ -1,15 +1,21 @@
 ; LH4051-DE Installer (Inno Setup 6)
-;   iscc /DAppVersion=0.1.0 /DArch=x64 /DBundleDir=<bundle dir> /DOutputFolder=<dir> lh4051-de.iss
-#ifndef AppVersion
+; Inputs come from environment variables (ISPP /D values are parsed as
+; expressions, so bare strings like "x64" or "0.1.0.2026..." would not compile):
+;   LH_VERSION (default 0.1.0)  LH_ARCH (x64|arm64)  LH_BUNDLE (bundle dir)  LH_OUT (output dir)
+#define AppVersion GetEnv("LH_VERSION")
+#if AppVersion == ""
   #define AppVersion "0.1.0"
 #endif
-#ifndef Arch
+#define Arch GetEnv("LH_ARCH")
+#if Arch == ""
   #define Arch "x64"
 #endif
-#ifndef BundleDir
+#define BundleDir GetEnv("LH_BUNDLE")
+#if BundleDir == ""
   #define BundleDir "..\dist\lh4051-de-" + AppVersion + "-win-" + Arch
 #endif
-#ifndef OutputFolder
+#define OutputFolder GetEnv("LH_OUT")
+#if OutputFolder == ""
   #define OutputFolder "..\dist"
 #endif
 
