@@ -6,10 +6,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  linux-x64:
-    runs-on: ubuntu-24.04
+  # ---------------------------------------------------------------- Linux
+  linux:
+    name: linux-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            # GitHub's Linux arm64 label (there is no "ubuntu-latest-arm").
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -19,45 +32,175 @@ jobs:
         run: make -j$(nproc) show-config all
       - name: Smoke test
         run: ./build/linux-gcc/lh4051-de --version
-      - name: Package
-        run: make dist-linux
+      - name: Package + LH4051-DE Installer
+        run: make dist-linux installer-unix TARGET_OS=linux
       - uses: actions/upload-artifact@v4
         with:
-          name: lh4051-de-linux-x64
-          path: dist/*.tar.gz
+          name: lh4051-de-linux-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
 
-  windows-x64-mingw:
-    runs-on: windows-latest
+  # Linux x86 (32-bit): GitHub has no i386 runners, so build inside an
+  # i386 Alpine container (QEMU/binfmt). Experimental.
+  linux-x86:
+    name: linux-x86
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@v3
+      - name: Build in i386 Alpine
+        run: |
+          docker run --rm --platform linux/386 -e PKG_VERSION -v "$PWD:/src" -w /src i386/alpine:edge sh -euc '
+            apk add --no-cache build-base pkgconf make gtk4.0-dev glib-dev tar
+            apk add --no-cache gtk4-layer-shell-dev || echo "no layer-shell"
+            make TARGET_OS=linux show-config all
+            ./build/linux-gcc/lh4051-de --version
+            make TARGET_OS=linux DIST_ARCH=i686 dist-linux installer-unix
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-linux-x86
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
+
+  # ---------------------------------------------------------------- macOS
+  macos:
+    name: macos-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel   # Intel
+          - arch: arm64
+            runner: macos-latest     # Apple Silicon
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: brew install gtk4 pkgconf
+      - name: Build
+        run: make -j$(sysctl -n hw.ncpu) macos show-config
+      - name: Smoke test
+        run: ./build/macos-clang/lh4051-de --version
+      - name: App bundle + LH4051-DE Installer (.pkg)
+        run: make installer-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-macos-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*Installer*.pkg
+
+  # ------------------------------------------------------------------ BSD
+  # Experimental: builds inside a VM on a Linux runner. (OpenBSD/NetBSD are not built in CI.)
+  freebsd:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          envs: 'PKG_VERSION'
+          prepare: pkg install -y gmake gtk4 pkgconf glib
+          run: |
+            gmake show-config all
+            ./build/bsd-gcc/lh4051-de --version
+            gmake dist-unix installer-unix TARGET_OS=bsd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-freebsd-x64
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
+
+  # -------------------------------------------------------------- Windows
+  # MinGW-w64 through MSYS2. The plain MINGW64 environment is phased out
+  # (no gtk4 package); x64 uses UCRT64, ARM64 uses CLANGARM64.
+  windows-mingw:
+    name: windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            msystem: UCRT64
+            cc: gcc
+            experimental: false
+          - arch: arm64
+            runner: windows-11-arm
+            msystem: CLANGARM64
+            cc: clang
+            experimental: false
     defaults:
       run:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        shell: pwsh
+        run: |
+          $base = (Select-String -Path src/longhorn.h -Pattern 'LH4051_VERSION "(.*)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $v = "$base." + (git show -s --format=%cd --date=format:%Y%m%d HEAD) + "." + (git rev-parse --short=7 HEAD) }
+          "PKG_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "PKG_VERSION=$v"
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: true
-          install: >-
-            make zip
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-gtk4
-            mingw-w64-x86_64-glib2
-            mingw-w64-x86_64-adwaita-icon-theme
+          install: make zip
+          # pacboy expands ":p" to the right prefix for the environment
+          # (mingw-w64-ucrt-x86_64-, mingw-w64-clang-aarch64-, mingw-w64-i686-, ...)
+          pacboy: >-
+            toolchain:p
+            pkgconf:p
+            gtk4:p
+            glib2:p
+            adwaita-icon-theme:p
       - name: Build
-        run: make -j$(nproc) win64
+        run: make -j$(nproc) win64 CC=${{ matrix.cc }} show-config
       - name: Smoke test
         run: ./build/windows-mingw/lh4051-de.exe --version
       - name: Bundle
-        run: make dist-win64
+        run: make dist-win64 CC=${{ matrix.cc }} WIN_ARCH=${{ matrix.arch }}
+      - name: Installer paths
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD "dist\lh4051-de-$env:PKG_VERSION-win-${{ matrix.arch }}"
+          if (-not (Test-Path $bundle)) { Get-ChildItem dist; throw "bundle dir missing: $bundle" }
+          "LH_VERSION=$env:PKG_VERSION","LH_ARCH=${{ matrix.arch }}","LH_BUNDLE=$bundle","LH_OUT=$PWD\dist" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: LH4051-DE Installer (Inno Setup)
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
+        with:
+          path: installer/lh4051-de.iss
+      - name: List output
+        shell: pwsh
+        run: Get-ChildItem dist
       - uses: actions/upload-artifact@v4
         with:
-          name: lh4051-de-windows-x64
+          name: lh4051-de-windows-${{ matrix.arch }}
           path: |
             dist/*.zip
+            dist/*Installer*.exe
 
-  windows-x64-msvc:
-    # Experimental: needs a prebuilt GTK4 for MSVC (gvsbuild release).
+  # ----------------------------------------------------------------- MSVC
+  # Experimental: cl.exe + a prebuilt GTK4 from gvsbuild. GNU make and a
+  # native pkgconf come from MSYS2 UCRT64; MSVC's environment is inherited.
+  windows-msvc:
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -69,16 +212,49 @@ jobs:
         shell: pwsh
         run: |
           gh release download --repo wingtk/gvsbuild --pattern 'GTK4_Gvsbuild_*_x64.zip' --dir gtkdl
-          Expand-Archive gtkdl/*.zip -DestinationPath C:\gtk
-          choco install pkgconfiglite make -y --no-progress
+          Expand-Archive (Get-ChildItem gtkdl/*.zip).FullName -DestinationPath C:\gtk
+          # The zip may or may not have a top-level folder: locate the real prefix.
+          $pc = Get-ChildItem C:\gtk -Recurse -Filter gtk4.pc | Select-Object -First 1
+          if (-not $pc) { throw "gtk4.pc not found in the gvsbuild archive" }
+          $prefix = (Split-Path (Split-Path (Split-Path $pc.FullName))) -replace '\\','/'
+          "GTK_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "GTK_PREFIX=$prefix"
         env:
           GH_TOKEN: ${{ github.token }}
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit   # keep the MSVC PATH/INCLUDE/LIB from msvc-dev-cmd
+          update: true
+          install: make
+          pacboy: >-
+            pkgconf:p
+            glib2:p
       - name: Build
-        shell: cmd
+        shell: msys2 {0}
         run: |
-          set PATH=C:\gtk\bin;%PATH%
-          make msvc GTK_PREFIX=C:/gtk PKG_CONFIG=pkg-config GLIB_COMPILE_RESOURCES=C:/gtk/bin/glib-compile-resources.exe
+          # MSYS2's coreutils `link` would shadow MSVC's link.exe.
+          rm -f /usr/bin/link.exe
+          export PATH="$GTK_PREFIX/bin:$PATH"
+          make msvc CC=cl GTK_PREFIX="$GTK_PREFIX" show-config
       - uses: actions/upload-artifact@v4
         with:
           name: lh4051-de-windows-msvc
           path: build/windows-msvc/lh4051-de.exe
+
+  # -------------------------------------------------------------- Release
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows-mingw]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

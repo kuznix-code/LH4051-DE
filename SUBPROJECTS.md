@@ -9,3 +9,4 @@ All components live in `src/` and are compiled into the single `lh4051-de` binar
 - `src/desktop.c`, `panel.c`, `sidebar.c`, `start_menu.c` — shell widgets.
 - `src/explorer.c`, `settings.c`, `appstore.c` — applications.
 - `src/platform.c` (OS differences), `prefs.c` (settings file), `theme.c` + `data/theme.css` (look, embedded as a GResource).
+- `installer/` and `macos/` — LH4051-DE Installer sources (Inno Setup script, unix self-extracting header, macOS Info.plist).

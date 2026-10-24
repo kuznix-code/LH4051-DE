@@ -1,11 +1,151 @@
 #include "longhorn.h"
 #include "LH4051-WM/wm.h"
 #include <string.h>
+#ifndef G_OS_WIN32
+#include <unistd.h>
+#endif
+
+#define MAX_RESULTS 200
+
+/* ======================================================================
+ * Package managers
+ *
+ * One table drives install/remove/search for every supported package manager.
+ * Templates are split on spaces; "%s" is replaced by the package / query.
+ * ====================================================================== */
+
+enum { OSF_LINUX = 1, OSF_MACOS = 2, OSF_BSD = 4, OSF_WINDOWS = 8 };
+
+typedef enum {
+    SEARCH_NONE,
+    SEARCH_APPSTREAM, /* handled separately (appstreamcli) */
+    SEARCH_DASH,      /* "name - summary" */
+    SEARCH_NAMES,     /* one package name per line */
+    SEARCH_PIPE,      /* "name|version" */
+    SEARCH_FLATPAK,   /* tab separated: application, name, description */
+    SEARCH_PORT,      /* tab separated: name, version, categories, description */
+    SEARCH_WINGET     /* column table */
+} SearchKind;
+
+typedef struct {
+    const char *label;
+    const char *binary;
+    unsigned os;       /* OSF_* mask */
+    gboolean root;     /* needs privilege escalation on Unix */
+    const char *install;
+    const char *remove;
+    const char *search;
+    SearchKind kind;
+} PackageManager;
+
+static const PackageManager PMS[] = {
+    /* Linux */
+    {"PackageKit", "pkcon", OSF_LINUX, FALSE, "pkcon -y install %s", "pkcon -y remove %s", NULL, SEARCH_NONE},
+    {"pacman", "pacman", OSF_LINUX, TRUE, "pacman -S --noconfirm %s", "pacman -R --noconfirm %s", NULL, SEARCH_NONE},
+    {"APT", "apt-get", OSF_LINUX, TRUE, "apt-get install -y %s", "apt-get remove -y %s", "apt-cache search %s", SEARCH_DASH},
+    {"DNF", "dnf", OSF_LINUX, TRUE, "dnf install -y %s", "dnf remove -y %s", NULL, SEARCH_NONE},
+    {"zypper", "zypper", OSF_LINUX, TRUE, "zypper --non-interactive install %s", "zypper --non-interactive remove %s", NULL, SEARCH_NONE},
+    {"apk", "apk", OSF_LINUX, TRUE, "apk add %s", "apk del %s", NULL, SEARCH_NONE},
+    {"xbps", "xbps-install", OSF_LINUX, TRUE, "xbps-install -y %s", "xbps-remove -y %s", NULL, SEARCH_NONE},
+    {"Portage", "emerge", OSF_LINUX, TRUE, "emerge %s", "emerge --unmerge %s", NULL, SEARCH_NONE},
+    {"Snap", "snap", OSF_LINUX, TRUE, "snap install %s", "snap remove %s", NULL, SEARCH_NONE},
+    {"Flatpak", "flatpak", OSF_LINUX, FALSE, "flatpak install -y %s", "flatpak uninstall -y %s",
+     "flatpak search --columns=application,name,description %s", SEARCH_FLATPAK},
+    {"Nix", "nix", OSF_LINUX | OSF_MACOS, FALSE, "nix profile install nixpkgs#%s", "nix profile remove %s", NULL, SEARCH_NONE},
+    /* macOS (Homebrew also works on Linux) */
+    {"Homebrew", "brew", OSF_MACOS | OSF_LINUX, FALSE, "brew install %s", "brew uninstall %s", "brew search %s", SEARCH_NAMES},
+    {"MacPorts", "port", OSF_MACOS, TRUE, "port install %s", "port uninstall %s", "port search --name --line %s", SEARCH_PORT},
+    /* BSD */
+    {"pkg", "pkg", OSF_BSD, TRUE, "pkg install -y %s", "pkg delete -y %s", "pkg search -q %s", SEARCH_NAMES},
+    {"pkgin", "pkgin", OSF_BSD, TRUE, "pkgin -y install %s", "pkgin -y remove %s", NULL, SEARCH_NONE},
+    {"pkg_add", "pkg_add", OSF_BSD, TRUE, "pkg_add %s", "pkg_delete %s", "pkg_info -Q %s", SEARCH_NAMES},
+    /* Windows */
+    {"winget", "winget", OSF_WINDOWS, FALSE,
+     "winget install --id %s -e --accept-source-agreements --accept-package-agreements",
+     "winget uninstall --id %s -e", "winget search %s --accept-source-agreements", SEARCH_WINGET},
+    {"Chocolatey", "choco", OSF_WINDOWS, FALSE, "choco install %s -y", "choco uninstall %s -y", "choco search %s -r", SEARCH_PIPE},
+    {"Scoop", "scoop", OSF_WINDOWS, FALSE, "scoop install %s", "scoop uninstall %s", NULL, SEARCH_NONE},
+};
+
+static unsigned current_os(void)
+{
+#if defined(G_OS_WIN32)
+    return OSF_WINDOWS;
+#elif defined(LH_OS_MACOS)
+    return OSF_MACOS;
+#elif defined(LH_OS_BSD)
+    return OSF_BSD;
+#else
+    return OSF_LINUX;
+#endif
+}
+
+static GPtrArray *detect_pms(void)
+{
+    GPtrArray *found = g_ptr_array_new();
+    for (guint i = 0; i < G_N_ELEMENTS(PMS); i++) {
+        char *path;
+        if (!(PMS[i].os & current_os())) continue;
+        path = g_find_program_in_path(PMS[i].binary);
+        if (path) { g_ptr_array_add(found, (gpointer)&PMS[i]); g_free(path); }
+    }
+    return found;
+}
+
+/* First available of pkexec / doas / sudo, or NULL (also NULL when already root). */
+static const char *escalator(void)
+{
+#ifdef G_OS_WIN32
+    return NULL;
+#else
+    static const char *names[] = {"pkexec", "doas", "sudo", NULL};
+    if (geteuid() == 0) return NULL;
+    for (int i = 0; names[i]; i++) {
+        char *p = g_find_program_in_path(names[i]);
+        if (p) { g_free(p); return names[i]; }
+    }
+    return NULL;
+#endif
+}
+
+static gboolean needs_escalator_but_missing(const PackageManager *pm)
+{
+#ifdef G_OS_WIN32
+    (void)pm;
+    return FALSE;
+#else
+    if (!pm->root || geteuid() == 0) return FALSE;
+    return escalator() == NULL;
+#endif
+}
+
+/* Builds a NULL-terminated argv from a template (+ escalator if required). */
+static GPtrArray *build_argv(const PackageManager *pm, const char *tmpl, const char *arg)
+{
+    GPtrArray *a = g_ptr_array_new_with_free_func(g_free);
+    char **parts = g_strsplit(tmpl, " ", -1);
+    const char *esc = pm->root ? escalator() : NULL;
+    if (esc) g_ptr_array_add(a, g_strdup(esc));
+    for (int i = 0; parts[i]; i++) {
+        if (!*parts[i]) continue;
+        if (g_strcmp0(parts[i], "%s") == 0) g_ptr_array_add(a, g_strdup(arg));
+        else if (strstr(parts[i], "%s")) {
+            char **pieces = g_strsplit(parts[i], "%s", 2); /* e.g. nixpkgs#%s */
+            g_ptr_array_add(a, g_strconcat(pieces[0], arg, pieces[1] ? pieces[1] : "", NULL));
+            g_strfreev(pieces);
+        } else g_ptr_array_add(a, g_strdup(parts[i]));
+    }
+    g_strfreev(parts);
+    g_ptr_array_add(a, NULL);
+    return a;
+}
+
+/* ---------- store entries ---------- */
 
 typedef struct {
     char *id, *name, *summary, *package, *homepage, *icon;
     GIcon *gicon;
-    GAppInfo *app; /* installed apps only */
+    const LHApp *app; /* installed apps; owned by the window's app list */
 } StoreApp;
 
 static void store_app_free(StoreApp *a)
@@ -14,57 +154,23 @@ static void store_app_free(StoreApp *a)
     g_free(a->id); g_free(a->name); g_free(a->summary);
     g_free(a->package); g_free(a->homepage); g_free(a->icon);
     g_clear_object(&a->gicon);
-    g_clear_object(&a->app);
     g_free(a);
 }
 
-/* ---------- package manager ---------- */
+static GPtrArray *detected;      /* const PackageManager*, valid while window exists */
+static GtkWidget *pm_dropdown;
 
-typedef enum { PM_NONE, PM_PACKAGEKIT, PM_PACMAN, PM_APT, PM_DNF, PM_ZYPPER, PM_WINGET } PackageManager;
-
-static PackageManager detect_pm(void)
+static const PackageManager *current_pm(void)
 {
-    if (lh4051_platform_is_windows())
-        return g_find_program_in_path("winget") ? PM_WINGET : PM_NONE;
-    if (g_find_program_in_path("pkcon")) return PM_PACKAGEKIT;
-    if (g_find_program_in_path("pacman")) return PM_PACMAN;
-    if (g_find_program_in_path("apt")) return PM_APT;
-    if (g_find_program_in_path("dnf")) return PM_DNF;
-    if (g_find_program_in_path("zypper")) return PM_ZYPPER;
-    return PM_NONE;
+    guint i;
+    if (!detected || !detected->len || !pm_dropdown) return NULL;
+    i = gtk_drop_down_get_selected(GTK_DROP_DOWN(pm_dropdown));
+    return i < detected->len ? g_ptr_array_index(detected, i) : NULL;
 }
 
-static const char *pm_name(PackageManager pm)
-{
-    static const char *names[] = {"none", "PackageKit", "pacman", "apt", "dnf", "zypper", "winget"};
-    return names[pm];
-}
-
-/* Builds argv for installing/removing `package`. Returns NULL if unsupported. */
-static GPtrArray *pm_command(PackageManager pm, gboolean install, const char *package)
-{
-    GPtrArray *a = g_ptr_array_new_with_free_func(g_free);
-    const char *verb = install ? "install" : "remove";
-#define ADD(s) g_ptr_array_add(a, g_strdup(s))
-    switch (pm) {
-    case PM_PACKAGEKIT: ADD("pkcon"); ADD("-y"); ADD(verb); ADD(package); break;
-    case PM_PACMAN: ADD("pkexec"); ADD("pacman"); ADD(install ? "-S" : "-R"); ADD("--noconfirm"); ADD(package); break;
-    case PM_APT: ADD("pkexec"); ADD("apt-get"); ADD(verb); ADD("-y"); ADD(package); break;
-    case PM_DNF: ADD("pkexec"); ADD("dnf"); ADD(verb); ADD("-y"); ADD(package); break;
-    case PM_ZYPPER: ADD("pkexec"); ADD("zypper"); ADD("--non-interactive"); ADD(verb); ADD(package); break;
-    case PM_WINGET:
-        ADD("winget"); ADD(install ? "install" : "uninstall"); ADD("--id"); ADD(package); ADD("-e");
-        ADD("--accept-source-agreements");
-        if (install) ADD("--accept-package-agreements");
-        break;
-    default: g_ptr_array_unref(a); return NULL;
-    }
-#undef ADD
-    g_ptr_array_add(a, NULL);
-    return a;
-}
-
-/* ---------- live operation window ---------- */
+/* ======================================================================
+ * Live operation window
+ * ====================================================================== */
 
 typedef struct {
     GtkWidget *output, *status, *close;
@@ -223,9 +329,11 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     g_subprocess_wait_async(op->process, NULL, op_finished, op);
 }
 
-/* ---------- confirm + start package action ---------- */
+/* ======================================================================
+ * Confirm + run package action
+ * ====================================================================== */
 
-typedef struct { GtkApplication *app; GtkWindow *parent; char *package; gboolean install; PackageManager pm; } PendingAction;
+typedef struct { GtkApplication *app; char *package; gboolean install; const PackageManager *pm; } PendingAction;
 
 static void pending_free(PendingAction *p) { g_free(p->package); g_free(p); }
 
@@ -236,23 +344,29 @@ static void confirm_answer(GObject *src, GAsyncResult *res, gpointer data)
     int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(src), res, &error);
     g_clear_error(&error);
     if (choice == 1) {
-        GPtrArray *argv = pm_command(p->pm, p->install, p->package);
-        if (argv) {
-            char *detail = g_strdup_printf("Package: %s\nPackage manager: %s\nAdministrator authentication may be requested.",
-                                           p->package, pm_name(p->pm));
-            run_logged(p->app, p->install ? "Installing application" : "Uninstalling application", detail, argv);
-            g_free(detail);
-            g_ptr_array_unref(argv);
-        }
+        GPtrArray *argv = build_argv(p->pm, p->install ? p->pm->install : p->pm->remove, p->package);
+        char *detail = g_strdup_printf("Package: %s\nPackage manager: %s%s", p->package, p->pm->label,
+            g_strcmp0(p->pm->binary, "choco") == 0 ? "\nChocolatey needs an elevated (administrator) session." : "");
+        run_logged(p->app, p->install ? "Installing application" : "Uninstalling application", detail, argv);
+        g_free(detail);
+        g_ptr_array_unref(argv);
     }
     g_object_unref(src);
     pending_free(p);
 }
 
+static void show_alert(GtkWindow *parent, const char *title, const char *detail)
+{
+    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", title);
+    gtk_alert_dialog_set_detail(dialog, detail);
+    gtk_alert_dialog_show(dialog, parent);
+    g_object_unref(dialog);
+}
+
 static void package_clicked(GtkButton *b, gpointer data)
 {
     GtkWindow *parent = GTK_WINDOW(data);
-    PackageManager pm = detect_pm();
+    const PackageManager *pm = current_pm();
     const char *package = g_object_get_data(G_OBJECT(b), "lh-package");
     gboolean install = g_object_get_data(G_OBJECT(b), "lh-install") != NULL;
     GtkAlertDialog *dialog;
@@ -261,26 +375,28 @@ static void package_clicked(GtkButton *b, gpointer data)
     const char *buttons[3];
 
     if (!package) return;
-    if (pm == PM_NONE) {
-        dialog = gtk_alert_dialog_new("No package manager found");
-        gtk_alert_dialog_set_detail(dialog, lh4051_platform_is_windows()
-            ? "winget is required to install applications. Install \"App Installer\" from the Microsoft Store."
-            : "No supported package manager (PackageKit, pacman, apt, dnf, zypper) was found.");
-        gtk_alert_dialog_show(dialog, parent);
-        g_object_unref(dialog);
+    if (!pm) {
+        show_alert(parent, "No package manager found",
+                   lh4051_platform_is_windows()
+                       ? "Install winget (App Installer from the Microsoft Store), Chocolatey or Scoop."
+                       : "No supported package manager was found on this system.");
+        return;
+    }
+    if (needs_escalator_but_missing(pm)) {
+        show_alert(parent, "Administrator rights required",
+                   "Install pkexec (polkit), doas or sudo, or start LH4051-DE as root, to use this package manager.");
         return;
     }
 
     p = g_new0(PendingAction, 1);
     p->app = gtk_window_get_application(parent);
-    p->parent = parent;
     p->package = g_strdup(package);
     p->install = install;
     p->pm = pm;
 
     title = g_strdup_printf("%s application?", install ? "Install" : "Uninstall");
     detail = g_strdup_printf("Package: %s\nPackage manager: %s\n\nThis may require administrator authentication.",
-                             package, pm_name(pm));
+                             package, pm->label);
     dialog = gtk_alert_dialog_new("%s", title);
     gtk_alert_dialog_set_detail(dialog, detail);
     buttons[0] = "Cancel"; buttons[1] = install ? "Install" : "Uninstall"; buttons[2] = NULL;
@@ -291,14 +407,16 @@ static void package_clicked(GtkButton *b, gpointer data)
     g_free(title); g_free(detail);
 }
 
-/* ---------- cards ---------- */
+/* ======================================================================
+ * Cards
+ * ====================================================================== */
 
 static void open_app(GtkButton *b, gpointer data)
 {
     StoreApp *a = data;
     GError *error = NULL;
     (void)b;
-    if (a->app && !g_app_info_launch(a->app, NULL, NULL, &error)) {
+    if (a->app && !lh4051_app_launch(a->app, &error)) {
         g_warning("LH4051 App Store: %s", error ? error->message : "launch failed");
         g_clear_error(&error);
     }
@@ -307,14 +425,11 @@ static void open_app(GtkButton *b, gpointer data)
 static void about_app(GtkButton *b, gpointer data)
 {
     StoreApp *a = data;
-    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", a->name ? a->name : "Application");
     char *detail = g_strdup_printf("%s\n\nIdentifier: %s\nPackage: %s\nHomepage: %s",
         a->summary ? a->summary : "No description available.", a->id ? a->id : "unknown",
         a->package ? a->package : "unknown", a->homepage ? a->homepage : "not provided");
-    gtk_alert_dialog_set_detail(dialog, detail);
-    gtk_alert_dialog_show(dialog, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))));
+    show_alert(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))), a->name ? a->name : "Application", detail);
     g_free(detail);
-    g_object_unref(dialog);
 }
 
 static GtkWidget *make_card(StoreApp *a, GtkWindow *parent, gboolean installed)
@@ -370,7 +485,19 @@ static GtkWidget *make_card(StoreApp *a, GtkWindow *parent, gboolean installed)
     return card;
 }
 
-/* ---------- AppStream search ---------- */
+/* ======================================================================
+ * Search result parsers
+ * ====================================================================== */
+
+static StoreApp *store_entry(const char *package, const char *name, const char *summary)
+{
+    StoreApp *a = g_new0(StoreApp, 1);
+    a->package = g_strdup(package);
+    a->id = g_strdup(package);
+    a->name = g_strdup(name && *name ? name : package);
+    a->summary = (summary && *summary) ? g_strdup(summary) : NULL;
+    return a;
+}
 
 static StoreApp *parse_appstream_block(const char *block)
 {
@@ -398,7 +525,108 @@ static StoreApp *parse_appstream_block(const char *block)
     return a;
 }
 
-typedef struct { GtkWidget *flow, *status; GtkWindow *window; guint generation; } SearchCtx;
+/* winget prints a space-aligned table; find the Id/Version columns from the header. */
+static void parse_winget(const char *out, GPtrArray *res)
+{
+    char **lines = g_strsplit(out, "\n", -1);
+    gboolean in_rows = FALSE;
+    gsize id_col = 0, ver_col = 0;
+    const char *header = NULL;
+
+    for (guint i = 0; lines[i] && res->len < MAX_RESULTS; i++) {
+        char *line = g_strchomp(lines[i]);
+        char *carriage = strrchr(line, '\r');
+        if (carriage) line = carriage + 1;
+        if (!in_rows) {
+            if (g_str_has_prefix(line, "Name")) header = line;
+            if (header && g_str_has_prefix(line, "---")) {
+                const char *id = strstr(header, "Id"), *ver = strstr(header, "Version");
+                if (!id) break;
+                id_col = (gsize)(id - header);
+                ver_col = ver ? (gsize)(ver - header) : strlen(header);
+                in_rows = TRUE;
+            }
+            continue;
+        }
+        if (strlen(line) <= id_col) continue;
+        {
+            char *name = g_strstrip(g_strndup(line, id_col));
+            char *id = g_strstrip(g_strndup(line + id_col, (strlen(line) > ver_col ? ver_col : strlen(line)) - id_col));
+            char *ver = strlen(line) > ver_col ? g_strstrip(g_strdup(line + ver_col)) : g_strdup("");
+            char *summary = *ver ? g_strdup_printf("Version %s", ver) : NULL;
+            if (*id) g_ptr_array_add(res, store_entry(id, name, summary));
+            g_free(name); g_free(id); g_free(ver); g_free(summary);
+        }
+    }
+    g_strfreev(lines);
+}
+
+static GPtrArray *parse_results(SearchKind kind, const char *out)
+{
+    GPtrArray *res = g_ptr_array_new_with_free_func((GDestroyNotify)store_app_free);
+    char **lines;
+
+    if (!out) return res;
+    if (kind == SEARCH_APPSTREAM) {
+        char **blocks = g_strsplit(out, "\n---\n", -1);
+        for (guint i = 0; blocks[i] && res->len < MAX_RESULTS; i++) {
+            StoreApp *a = parse_appstream_block(blocks[i]);
+            if (a) g_ptr_array_add(res, a);
+        }
+        g_strfreev(blocks);
+        return res;
+    }
+    if (kind == SEARCH_WINGET) { parse_winget(out, res); return res; }
+
+    lines = g_strsplit(out, "\n", -1);
+    for (guint i = 0; lines[i] && res->len < MAX_RESULTS; i++) {
+        char *line = g_strstrip(lines[i]);
+        if (!*line || *line == '=' || *line == '#') continue;
+        switch (kind) {
+        case SEARCH_DASH: {
+            char *sep = strstr(line, " - ");
+            if (sep) { char *name = g_strndup(line, (gsize)(sep - line));
+                       g_ptr_array_add(res, store_entry(name, name, sep + 3)); g_free(name); }
+            break;
+        }
+        case SEARCH_NAMES: {
+            if (!strchr(line, ' ')) g_ptr_array_add(res, store_entry(line, line, NULL));
+            break;
+        }
+        case SEARCH_PIPE: {
+            char **c = g_strsplit(line, "|", 2);
+            if (c[0] && *c[0]) {
+                char *summary = c[1] ? g_strdup_printf("Version %s", c[1]) : NULL;
+                g_ptr_array_add(res, store_entry(c[0], c[0], summary));
+                g_free(summary);
+            }
+            g_strfreev(c);
+            break;
+        }
+        case SEARCH_FLATPAK: {
+            char **c = g_strsplit(line, "\t", 3);
+            if (c[0] && c[1] && *c[0]) g_ptr_array_add(res, store_entry(c[0], c[1], c[2]));
+            g_strfreev(c);
+            break;
+        }
+        case SEARCH_PORT: {
+            char **c = g_strsplit(line, "\t", 5);
+            if (c[0] && *c[0]) g_ptr_array_add(res, store_entry(c[0], c[0], c[1] && c[2] && c[3] ? c[3] : NULL));
+            g_strfreev(c);
+            break;
+        }
+        default: break;
+        }
+    }
+    g_strfreev(lines);
+    return res;
+}
+
+/* ======================================================================
+ * Search
+ * ====================================================================== */
+
+typedef struct { GtkWidget *flow, *status; GtkWindow *window; guint generation; SearchKind kind; } SearchCtx;
 
 static guint search_generation;
 
@@ -413,23 +641,19 @@ static void search_done(GObject *src, GAsyncResult *res, gpointer data)
     SearchCtx *ctx = data;
     char *out = NULL, *err = NULL;
     GError *error = NULL;
-    guint found = 0;
     gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(src), res, &out, &err, &error);
 
     if (!ctx->flow || !ctx->status || ctx->generation != search_generation) {
         /* window closed or a newer search superseded this one */
     } else if (ok) {
-        char **blocks = g_strsplit(out ? out : "", "\n---\n", -1);
-        for (guint i = 0; blocks[i]; i++) {
-            StoreApp *a = parse_appstream_block(blocks[i]);
-            if (!a) continue;
-            gtk_flow_box_insert(GTK_FLOW_BOX(ctx->flow), make_card(a, ctx->window, FALSE), -1);
-            found++;
-        }
-        g_strfreev(blocks);
+        GPtrArray *results = parse_results(ctx->kind, out);
+        guint n = results->len;
+        for (guint i = 0; i < n; i++)
+            gtk_flow_box_insert(GTK_FLOW_BOX(ctx->flow),
+                                make_card(g_ptr_array_steal_index(results, 0), ctx->window, FALSE), -1);
+        g_ptr_array_unref(results);
         {
-            char *m = found ? g_strdup_printf("%u result%s", found, found == 1 ? "" : "s")
-                            : g_strdup("No matching applications.");
+            char *m = n ? g_strdup_printf("%u result%s", n, n == 1 ? "" : "s") : g_strdup("No matching applications.");
             gtk_label_set_text(GTK_LABEL(ctx->status), m);
             g_free(m);
         }
@@ -447,6 +671,9 @@ static void search_done(GObject *src, GAsyncResult *res, gpointer data)
 static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkWindow *window)
 {
     const char *query = gtk_editable_get_text(GTK_EDITABLE(entry));
+    const PackageManager *pm = current_pm();
+    GPtrArray *argv = NULL;
+    SearchKind kind = SEARCH_NONE;
     GSubprocess *proc;
     GError *error = NULL;
     SearchCtx *ctx;
@@ -455,22 +682,35 @@ static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkW
     clear_flow(flow);
     if (!query || !*query) { gtk_label_set_text(GTK_LABEL(status), "Type a name to search."); return; }
 
-    if (!g_find_program_in_path("appstreamcli")) {
-        gtk_label_set_text(GTK_LABEL(status), lh4051_platform_is_windows()
-            ? "Catalog search needs AppStream (not available on Windows). Use winget to find packages."
-            : "Catalog search needs appstreamcli (package: appstream).");
+    if (pm && pm->search && pm->kind != SEARCH_NONE) {
+        argv = build_argv(pm, pm->search, query);
+        kind = pm->kind;
+    } else if (!lh4051_platform_is_windows() && g_find_program_in_path("appstreamcli")) {
+        argv = g_ptr_array_new_with_free_func(g_free);
+        g_ptr_array_add(argv, g_strdup("appstreamcli"));
+        g_ptr_array_add(argv, g_strdup("search"));
+        g_ptr_array_add(argv, g_strdup(query));
+        g_ptr_array_add(argv, NULL);
+        kind = SEARCH_APPSTREAM;
+    } else {
+        char *m = g_strdup_printf("%s cannot search from here. Pick another source, or install appstreamcli.",
+                                  pm ? pm->label : "No package manager");
+        gtk_label_set_text(GTK_LABEL(status), m);
+        g_free(m);
         return;
     }
-    proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error,
-                            "appstreamcli", "search", query, NULL);
+
+    proc = g_subprocess_newv((const char *const *)argv->pdata,
+                             G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error);
+    g_ptr_array_unref(argv);
     if (!proc) {
-        gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not run appstreamcli.");
+        gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not start the search.");
         g_clear_error(&error);
         return;
     }
     ctx = g_new0(SearchCtx, 1);
-    ctx->flow = flow; ctx->status = status; ctx->window = window;
-    ctx->generation = ++search_generation;
+    ctx->flow = flow; ctx->status = status; ctx->window = window; ctx->kind = kind;
+    ctx->generation = search_generation;
     g_object_add_weak_pointer(G_OBJECT(flow), (gpointer *)&ctx->flow);
     g_object_add_weak_pointer(G_OBJECT(status), (gpointer *)&ctx->status);
     gtk_label_set_text(GTK_LABEL(status), "Searching…");
@@ -486,28 +726,26 @@ static void search_clicked(GtkButton *b, gpointer data)
 
 static void search_entry_activate(GtkSearchEntry *e, gpointer data)
 {
-    gtk_widget_activate(GTK_WIDGET(data));
     (void)e;
+    gtk_widget_activate(GTK_WIDGET(data));
 }
 
-/* ---------- installed apps ---------- */
+/* ======================================================================
+ * Window
+ * ====================================================================== */
 
-static void populate_installed(GtkWidget *flow, GtkWindow *parent)
+static void populate_installed(GtkWidget *flow, GtkWindow *parent, GPtrArray *apps)
 {
-    GList *apps = g_app_info_get_all();
-    for (GList *l = apps; l; l = l->next) {
-        GAppInfo *info = l->data;
-        StoreApp *a;
-        if (!g_app_info_should_show(info) || !g_app_info_get_display_name(info)) continue;
-        a = g_new0(StoreApp, 1);
-        a->id = g_strdup(g_app_info_get_id(info));
-        a->name = g_strdup(g_app_info_get_display_name(info));
-        a->summary = g_strdup(g_app_info_get_description(info));
-        a->gicon = g_app_info_get_icon(info) ? g_object_ref(g_app_info_get_icon(info)) : NULL;
-        a->app = g_object_ref(info);
+    for (guint i = 0; i < apps->len; i++) {
+        const LHApp *app = g_ptr_array_index(apps, i);
+        StoreApp *a = g_new0(StoreApp, 1);
+        a->id = g_strdup(app->id);
+        a->name = g_strdup(app->name);
+        a->summary = g_strdup(app->summary);
+        a->gicon = app->icon ? g_object_ref(app->icon) : NULL;
+        a->app = app;
         gtk_flow_box_insert(GTK_FLOW_BOX(flow), make_card(a, parent, TRUE), -1);
     }
-    g_list_free_full(apps, g_object_unref);
 }
 
 static GtkWindow *existing; /* single instance */
@@ -516,23 +754,52 @@ static void on_store_destroy(GtkWidget *w, gpointer d)
 {
     (void)w; (void)d;
     existing = NULL;
+    pm_dropdown = NULL;
+    g_clear_pointer(&detected, g_ptr_array_unref);
 }
 
 void lh4051_appstore_open(GtkApplication *app)
 {
+    GtkWidget *root, *header, *row, *entry, *search, *status, *results, *installed;
+    GtkWidget *rscroll, *iscroll, *rlabel, *ilabel, *title, *body, *pm_row, *pm_label;
+    GPtrArray *apps;
+    char *source_text;
+
     if (existing) { gtk_window_present(existing); return; }
 
-    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    GtkWidget *entry = gtk_search_entry_new();
-    GtkWidget *search = gtk_button_new_with_label("Search");
-    GtkWidget *status = gtk_label_new("Search the AppStream catalog or manage installed applications.");
-    GtkWidget *results = gtk_flow_box_new(), *installed = gtk_flow_box_new();
-    GtkWidget *rscroll = gtk_scrolled_window_new(), *iscroll = gtk_scrolled_window_new();
-    GtkWidget *rlabel = gtk_label_new("Catalog results"), *ilabel = gtk_label_new("Installed applications");
-    GtkWidget *title = gtk_label_new("LH4051 App Store");
-    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    pm_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    entry = gtk_search_entry_new();
+    search = gtk_button_new_with_label("Search");
+    status = gtk_label_new("");
+    results = gtk_flow_box_new();
+    installed = gtk_flow_box_new();
+    rscroll = gtk_scrolled_window_new();
+    iscroll = gtk_scrolled_window_new();
+    rlabel = gtk_label_new("Search results");
+    ilabel = gtk_label_new("Installed applications");
+    title = gtk_label_new("LH4051 App Store");
+    body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    pm_label = gtk_label_new("Package manager:");
+
+    detected = detect_pms();
+    {
+        GPtrArray *names = g_ptr_array_new();
+        for (guint i = 0; i < detected->len; i++)
+            g_ptr_array_add(names, (gpointer)((const PackageManager *)g_ptr_array_index(detected, i))->label);
+        if (!names->len) g_ptr_array_add(names, (gpointer)"none found");
+        g_ptr_array_add(names, NULL);
+        pm_dropdown = gtk_drop_down_new_from_strings((const char *const *)names->pdata);
+        g_ptr_array_unref(names);
+    }
+    gtk_widget_set_sensitive(pm_dropdown, detected->len > 0);
+
+    source_text = g_strdup_printf("Manage applications on %s. %u package manager%s detected.",
+                                  lh4051_platform_name(), detected->len, detected->len == 1 ? "" : "s");
+    gtk_label_set_text(GTK_LABEL(status), source_text);
+    g_free(source_text);
 
     gtk_widget_add_css_class(root, "lh-store");
     gtk_widget_add_css_class(header, "lh-store-header");
@@ -550,8 +817,11 @@ void lh4051_appstore_open(GtkApplication *app)
     gtk_widget_set_hexpand(entry, TRUE);
     gtk_box_append(GTK_BOX(row), entry);
     gtk_box_append(GTK_BOX(row), search);
+    gtk_box_append(GTK_BOX(pm_row), pm_label);
+    gtk_box_append(GTK_BOX(pm_row), pm_dropdown);
     gtk_box_append(GTK_BOX(header), title);
     gtk_box_append(GTK_BOX(header), row);
+    gtk_box_append(GTK_BOX(header), pm_row);
     gtk_box_append(GTK_BOX(header), status);
     gtk_box_append(GTK_BOX(root), header);
 
@@ -580,8 +850,10 @@ void lh4051_appstore_open(GtkApplication *app)
     g_signal_connect(search, "clicked", G_CALLBACK(search_clicked), NULL);
     g_signal_connect(entry, "activate", G_CALLBACK(search_entry_activate), search);
 
-    existing = lh4051_wm_create_window(app, "LH4051 App Store", 980, 720, root);
+    existing = lh4051_wm_create_window(app, "LH4051 App Store", 980, 760, root);
     g_signal_connect(existing, "destroy", G_CALLBACK(on_store_destroy), NULL);
-    populate_installed(installed, existing);
+    apps = lh4051_apps_list();
+    g_object_set_data_full(G_OBJECT(existing), "lh-apps", apps, (GDestroyNotify)g_ptr_array_unref);
+    populate_installed(installed, existing, apps);
     gtk_window_present(existing);
 }

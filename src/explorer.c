@@ -148,7 +148,7 @@ static void row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer data)
         GFile *f = g_file_new_for_path(path);
         char *uri = g_file_get_uri(f);
         GError *error = NULL;
-        if (!g_app_info_launch_default_for_uri(uri, NULL, &error)) {
+        if (!lh4051_open_uri_checked(uri, &error)) {
             gtk_label_set_text(GTK_LABEL(x->status), error ? error->message : "No application is registered for this file.");
             g_clear_error(&error);
         }

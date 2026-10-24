@@ -22,7 +22,8 @@ rm -rf "$out"; mkdir -p "$out"
 cp "$exe" "$out/"
 
 objdump_bin="objdump"
-command -v "$triple-objdump" >/dev/null 2>&1 && objdump_bin="$triple-objdump"
+if command -v "$triple-objdump" >/dev/null 2>&1; then objdump_bin="$triple-objdump"
+elif ! command -v objdump >/dev/null 2>&1 && command -v llvm-objdump >/dev/null 2>&1; then objdump_bin="llvm-objdump"; fi
 
 # Resolve DLL dependency closure by name against $bin.
 todo="$out/$(basename "$exe")"

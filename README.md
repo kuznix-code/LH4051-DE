@@ -4,8 +4,22 @@ A GTK4 desktop shell that recreates the look of **Windows "Longhorn" Build 4051*
 slate taskbar with a pill-shaped Start button, translucent sidebar (search, analog clock, notes),
 two-column Start menu, Longhorn-framed windows, and an Explorer with the blue "Phode" header.
 
-Runs on **Linux** (Wayland layer-shell *or* any X11/Wayland desktop) and **Windows x64**
-(MinGW-w64 or MSVC). Version: `0.0.0` (pre-release).
+**Version 0.1.0 — stable release.**
+
+Runs on **Linux** (x86, x64, ARM64), **Windows** (x64, ARM64; MinGW-w64 or MSVC), **macOS** (Intel and Apple Silicon),
+and **FreeBSD / OpenBSD / NetBSD / DragonFly** or any other unix-like system with GTK 4.10+ (ELF, Mach-O and PE targets).
+
+## Install
+Every release ships a **LH4051-DE Installer**:
+
+| OS | Installer |
+|----|-----------|
+| Windows x64 / ARM64 | `LH4051-DE-Installer-<ver>-win-<arch>.exe` (Inno Setup wizard; GTK runtime included) |
+| macOS Intel / ARM | `LH4051-DE-Installer-<ver>-macos-<arch>.pkg` (installs `LH4051-DE.app`; needs `brew install gtk4`) |
+| Linux, BSD, other unix | `sh LH4051-DE-Installer-<ver>-<os>-<arch>.run [--prefix DIR] [--yes] [--uninstall]` |
+| Arch Linux | `make dist-arch` (PKGBUILD for the tagged release) |
+
+Windows x86 is not supported: MSYS2 has no 32-bit GTK 4.
 
 ## How it runs
 
@@ -31,14 +45,32 @@ make dist-linux              # dist/lh4051-de-<ver>-linux-<arch>.tar.gz
 ```
 `gtk4-layer-shell` is optional; without it the shell uses composite mode.
 
-### Windows — MinGW-w64 (MSYS2)
-In an **MSYS2 MINGW64** shell:
+### macOS (Intel and Apple Silicon)
 ```sh
-pacman -S make zip mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf \
-          mingw-w64-x86_64-gtk4 mingw-w64-x86_64-adwaita-icon-theme
-make win64                   # build/windows-mingw/lh4051-de.exe
-make dist-win64              # dist/lh4051-de-<ver>-win64.zip with the GTK runtime bundled
+brew install gtk4 pkgconf
+make macos                   # build/macos-clang/lh4051-de
+make installer-macos         # dist/LH4051-DE.app, .zip and "LH4051-DE Installer" .pkg
 ```
+macOS runs the shell in a window (`--windowed`); the app list also shows `.app` bundles.
+
+### FreeBSD / OpenBSD / NetBSD / other unix
+GNU make is required (`gmake` on BSD):
+```sh
+pkg install gmake gtk4 pkgconf        # FreeBSD    (OpenBSD: pkg_add gmake gtk4; NetBSD: pkgin install gmake gtk4)
+gmake && gmake install                # or: gmake installer-unix
+```
+Any other unix-like OS works the same way when GTK4 is installed (`TARGET_OS` is detected from `uname -s`).
+
+### Windows — MinGW-w64 (MSYS2)
+MSYS2 has phased out the plain MINGW64 environment; use **UCRT64** (x64), **CLANG64**, or **CLANGARM64** (ARM64).
+In an **MSYS2 UCRT64** shell:
+```sh
+pacman -S make zip mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-pkgconf \
+          mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-adwaita-icon-theme
+make win64                   # build/windows-mingw/lh4051-de.exe
+make dist-win64              # dist/lh4051-de-<ver>-win-x64.zip with the GTK runtime bundled
+```
+In CLANG64/CLANGARM64 there is no gcc: use `make win64 CC=clang` (set `WIN_ARCH=arm64` to name the bundle).
 Cross-compiling from Linux works too if a MinGW GTK4 sysroot exists (`MINGW_PREFIX=/usr/x86_64-w64-mingw32`,
 or an MXE/Fedora `x86_64-w64-mingw32-pkg-config`): `make win64`.
 
@@ -63,7 +95,10 @@ At runtime put `C:\gtk\bin` next to the exe or on `PATH`.
 * **Explorer**: back/forward/up, path bar, live filter, sortable columns, hidden-file toggle, favorite links.
 * **Settings**: desktop icons, watermark, wallpaper, 24-hour clock, sidebar. Stored in `~/.config/lh4051-de/settings.ini`
   (`%APPDATA%\lh4051-de` on Windows).
-* **App Store**: installed apps; AppStream search + install/remove via PackageKit/pacman/apt/dnf/zypper (Linux) or `winget` (Windows).
+* **App Store**: installed apps plus search/install/remove through the package manager you pick in the drop-down.
+  Detected automatically: Windows `winget`, Chocolatey, Scoop; macOS Homebrew, MacPorts; FreeBSD `pkg`, OpenBSD `pkg_add`,
+  NetBSD `pkgin`; Linux apt, dnf, pacman, zypper, apk, xbps, emerge, nix, Flatpak and AppStream. Privileged commands go
+  through pkexec/doas/sudo and show a live log.
 
 On Windows the shell covers the screen. Press **Alt+F4** on the shell, or use *Start → Turn Off Computer*, to exit;
 `--windowed` avoids this.
