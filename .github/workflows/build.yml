@@ -177,23 +177,20 @@ jobs:
         run: ./build/windows-mingw/lh4051-de.exe --version
       - name: Bundle
         run: make dist-win64 CC=${{ matrix.cc }} WIN_ARCH=${{ matrix.arch }}
-      - name: LH4051-DE Installer (Inno Setup)
+      - name: Installer paths
         shell: pwsh
         run: |
-          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) {
-            choco install innosetup -y --no-progress
-            $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-          if (-not $iscc) { throw "Inno Setup (ISCC.exe) could not be found or installed" }
-          Write-Host "Using $($iscc.FullName)"
-          $ver = $env:PKG_VERSION
-          $arch = "${{ matrix.arch }}"
-          $bundle = Join-Path $PWD "dist\lh4051-de-$ver-win-$arch"
+          $bundle = Join-Path $PWD "dist\lh4051-de-$env:PKG_VERSION-win-${{ matrix.arch }}"
           if (-not (Test-Path $bundle)) { Get-ChildItem dist; throw "bundle dir missing: $bundle" }
-          & $iscc.FullName "/DAppVersion=$ver" "/DArch=$arch" "/DBundleDir=$bundle" "/DOutputFolder=$PWD\dist" "/FLH4051-DE-Installer-$ver-win-$arch" installer\lh4051-de.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
-          Get-ChildItem dist
+          "ISS_OPTIONS=/DAppVersion=$env:PKG_VERSION /DArch=${{ matrix.arch }} /DBundleDir=$bundle /DOutputFolder=$PWD\dist /FLH4051-DE-Installer-$env:PKG_VERSION-win-${{ matrix.arch }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: LH4051-DE Installer (Inno Setup)
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.9
+        with:
+          path: installer/lh4051-de.iss
+          options: ${{ env.ISS_OPTIONS }}
+      - name: List output
+        shell: pwsh
+        run: Get-ChildItem dist
       - uses: actions/upload-artifact@v4
         with:
           name: lh4051-de-windows-${{ matrix.arch }}
