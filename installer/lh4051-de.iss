@@ -1,16 +1,16 @@
 ; LH4051-DE Installer (Inno Setup 6)
-;   iscc /DAppVersion=0.1.0 /DArch=x64 /DSourceDir=<bundle dir> /DOutDir=<dir> lh4051-de.iss
+;   iscc /DAppVersion=0.1.0 /DArch=x64 /DBundleDir=<bundle dir> /DOutputFolder=<dir> lh4051-de.iss
 #ifndef AppVersion
   #define AppVersion "0.1.0"
 #endif
 #ifndef Arch
   #define Arch "x64"
 #endif
-#ifndef SourceDir
-  #define SourceDir "..\dist\lh4051-de-" + AppVersion + "-win-" + Arch
+#ifndef BundleDir
+  #define BundleDir "..\dist\lh4051-de-" + AppVersion + "-win-" + Arch
 #endif
-#ifndef OutDir
-  #define OutDir "..\dist"
+#ifndef OutputFolder
+  #define OutputFolder "..\dist"
 #endif
 
 [Setup]
@@ -24,7 +24,7 @@ AppSupportURL=https://github.com/kuznix-code/LH4051-DE/issues
 DefaultDirName={autopf}\LH4051-DE
 DefaultGroupName=LH4051-DE
 DisableProgramGroupPage=yes
-OutputDir={#OutDir}
+OutputDir={#OutputFolder}
 OutputBaseFilename=LH4051-DE-Installer-{#AppVersion}-win-{#Arch}
 Compression=lzma2
 SolidCompression=yes
@@ -50,7 +50,7 @@ WelcomeLabel2=This installs LH4051-DE {#AppVersion}, a Longhorn Build 4051 style
 Name: desktopicon; Description: "Create a &desktop shortcut"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\LH4051-DE"; Filename: "{app}\lh4051-de.exe"; Parameters: "--windowed"

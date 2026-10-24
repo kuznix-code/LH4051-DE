@@ -21,6 +21,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -47,10 +49,12 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - uses: docker/setup-qemu-action@v3
       - name: Build in i386 Alpine
         run: |
-          docker run --rm --platform linux/386 -v "$PWD:/src" -w /src i386/alpine:edge sh -euc '
+          docker run --rm --platform linux/386 -e PKG_VERSION -v "$PWD:/src" -w /src i386/alpine:edge sh -euc '
             apk add --no-cache build-base pkgconf make gtk4.0-dev glib-dev tar
             apk add --no-cache gtk4-layer-shell-dev || echo "no layer-shell"
             make TARGET_OS=linux show-config all
@@ -78,6 +82,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: brew install gtk4 pkgconf
       - name: Build
@@ -100,9 +106,12 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
+          envs: 'PKG_VERSION'
           prepare: pkg install -y gmake gtk4 pkgconf glib
           run: |
             gmake show-config all
@@ -141,6 +150,14 @@ jobs:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
+      - name: Artifact version
+        shell: pwsh
+        run: |
+          $base = (Select-String -Path src/longhorn.h -Pattern 'LH4051_VERSION "(.*)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $v = "$base." + (git show -s --format=%cd --date=format:%Y%m%d HEAD) + "." + (git rev-parse --short=7 HEAD) }
+          "PKG_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "PKG_VERSION=$v"
       - uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem }}
@@ -162,12 +179,21 @@ jobs:
         run: make dist-win64 CC=${{ matrix.cc }} WIN_ARCH=${{ matrix.arch }}
       - name: LH4051-DE Installer (Inno Setup)
         shell: pwsh
-        continue-on-error: true
         run: |
           $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" | Select-Object -First 1 }
-          $ver = (Select-String -Path src/longhorn.h -Pattern 'LH4051_VERSION "(.*)"').Matches[0].Groups[1].Value
-          & $iscc.FullName /Qp "/DAppVersion=$ver" "/DArch=${{ matrix.arch }}" "/DSourceDir=$PWD\dist\lh4051-de-$ver-win-${{ matrix.arch }}" "/DOutDir=$PWD\dist" installer\lh4051-de.iss
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) could not be found or installed" }
+          Write-Host "Using $($iscc.FullName)"
+          $ver = $env:PKG_VERSION
+          $arch = "${{ matrix.arch }}"
+          $bundle = Join-Path $PWD "dist\lh4051-de-$ver-win-$arch"
+          if (-not (Test-Path $bundle)) { Get-ChildItem dist; throw "bundle dir missing: $bundle" }
+          & $iscc.FullName "/DAppVersion=$ver" "/DArch=$arch" "/DBundleDir=$bundle" "/DOutputFolder=$PWD\dist" "/FLH4051-DE-Installer-$ver-win-$arch" installer\lh4051-de.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          Get-ChildItem dist
       - uses: actions/upload-artifact@v4
         with:
           name: lh4051-de-windows-${{ matrix.arch }}

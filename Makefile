@@ -10,6 +10,9 @@
 
 NAME    := lh4051-de
 VERSION := $(shell sed -n 's/^\#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)
+# PKG_VERSION names dist artifacts/installers: <VERSION>.<YYYYMMDD>.<commit> for
+# development builds (scripts/pkg-version.sh), plain VERSION for release tags.
+PKG_VERSION ?= $(VERSION)
 
 # ---------------------------------------------------------------------------
 # Host / target selection
@@ -355,8 +358,8 @@ uninstall:
 dist-unix:
 	@rm -rf dist/stage-unix && mkdir -p dist
 	@$(MAKE) --no-print-directory PREFIX=/usr DESTDIR=$(CURDIR)/dist/stage-unix install
-	@tar -C dist/stage-unix -czf dist/$(NAME)-$(VERSION)-$(TARGET_OS)-$(DIST_ARCH).tar.gz .
-	@echo "==> dist/$(NAME)-$(VERSION)-$(TARGET_OS)-$(DIST_ARCH).tar.gz"
+	@tar -C dist/stage-unix -czf dist/$(NAME)-$(PKG_VERSION)-$(TARGET_OS)-$(DIST_ARCH).tar.gz .
+	@echo "==> dist/$(NAME)-$(PKG_VERSION)-$(TARGET_OS)-$(DIST_ARCH).tar.gz"
 
 dist-linux:
 	@$(MAKE) --no-print-directory TARGET_OS=linux TOOLCHAIN=gcc dist-unix
@@ -368,31 +371,31 @@ dist-macos:
 	@rm -rf $(APP_DIR) && mkdir -p $(APP_DIR)/Contents/MacOS $(APP_DIR)/Contents/Resources
 	@cp build/macos-clang/$(NAME) $(APP_DIR)/Contents/MacOS/$(NAME)-bin
 	@cp scripts/macos-launcher.sh $(APP_DIR)/Contents/MacOS/LH4051-DE && chmod 755 $(APP_DIR)/Contents/MacOS/LH4051-DE
-	@sed -e 's|@version@|$(VERSION)|g' macos/Info.plist.in > $(APP_DIR)/Contents/Info.plist
-	@cd dist && ditto -c -k --keepParent LH4051-DE.app $(NAME)-$(VERSION)-macos-$(DIST_ARCH).zip 2>/dev/null || \
-	  (cd dist && zip -qr $(NAME)-$(VERSION)-macos-$(DIST_ARCH).zip LH4051-DE.app)
-	@echo "==> dist/$(NAME)-$(VERSION)-macos-$(DIST_ARCH).zip"
+	@sed -e 's|@version@|$(PKG_VERSION)|g' macos/Info.plist.in > $(APP_DIR)/Contents/Info.plist
+	@cd dist && ditto -c -k --keepParent LH4051-DE.app $(NAME)-$(PKG_VERSION)-macos-$(DIST_ARCH).zip 2>/dev/null || \
+	  (cd dist && zip -qr $(NAME)-$(PKG_VERSION)-macos-$(DIST_ARCH).zip LH4051-DE.app)
+	@echo "==> dist/$(NAME)-$(PKG_VERSION)-macos-$(DIST_ARCH).zip"
 
 # "LH4051-DE Installer" for unix-like systems: self-extracting .run
 installer-unix:
 	@$(MAKE) --no-print-directory dist-unix
-	@sh scripts/make-installer-unix.sh "dist/$(NAME)-$(VERSION)-$(TARGET_OS)-$(DIST_ARCH).tar.gz" \
-	  "dist/LH4051-DE-Installer-$(VERSION)-$(TARGET_OS)-$(DIST_ARCH).run" "$(VERSION)"
+	@sh scripts/make-installer-unix.sh "dist/$(NAME)-$(PKG_VERSION)-$(TARGET_OS)-$(DIST_ARCH).tar.gz" \
+	  "dist/LH4051-DE-Installer-$(PKG_VERSION)-$(TARGET_OS)-$(DIST_ARCH).run" "$(PKG_VERSION)"
 
 # "LH4051-DE Installer" for macOS: .pkg installing LH4051-DE.app into /Applications
 installer-macos: dist-macos
 	@pkgbuild --component $(APP_DIR) --install-location /Applications --identifier org.kuznix.lh4051de \
-	  --version $(VERSION) "dist/LH4051-DE-Installer-$(VERSION)-macos-$(DIST_ARCH).pkg"
-	@echo "==> dist/LH4051-DE-Installer-$(VERSION)-macos-$(DIST_ARCH).pkg"
+	  --version "$(shell echo $(PKG_VERSION) | cut -d. -f1-3)" "dist/LH4051-DE-Installer-$(PKG_VERSION)-macos-$(DIST_ARCH).pkg"
+	@echo "==> dist/LH4051-DE-Installer-$(PKG_VERSION)-macos-$(DIST_ARCH).pkg"
 
 # "LH4051-DE Installer" for Windows (Inno Setup, run after dist-win64)
 installer-win:
-	@iscc /Qp /DAppVersion=$(VERSION) /DArch=$(WIN_ARCH) \
-	  "/DSourceDir=$(CURDIR)/dist/$(NAME)-$(VERSION)-win-$(WIN_ARCH)" "/DOutDir=$(CURDIR)/dist" installer/lh4051-de.iss
+	@iscc /Qp /DAppVersion=$(PKG_VERSION) /DArch=$(WIN_ARCH) \
+	  "/DBundleDir=$(CURDIR)/dist/$(NAME)-$(PKG_VERSION)-win-$(WIN_ARCH)" "/DOutputFolder=$(CURDIR)/dist" installer/lh4051-de.iss
 
 dist-win64:
 	@$(MAKE) --no-print-directory win64
-	@sh scripts/bundle-win.sh "build/windows-mingw/$(NAME).exe" "dist/$(NAME)-$(VERSION)-win-$(WIN_ARCH)" "$(TRIPLE)"
+	@sh scripts/bundle-win.sh "build/windows-mingw/$(NAME).exe" "dist/$(NAME)-$(PKG_VERSION)-win-$(WIN_ARCH)" "$(TRIPLE)"
 
 # Arch package, stable release (needs the v$(VERSION) tag on the remote).
 dist-arch dist-stable:
