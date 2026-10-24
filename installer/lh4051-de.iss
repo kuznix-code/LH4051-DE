@@ -37,7 +37,6 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\lh4051-de.exe
-SetupWindowTitle=LH4051-DE Installer
 #if Arch == "arm64"
 ArchitecturesAllowed=arm64
 ArchitecturesInstallIn64BitMode=arm64
