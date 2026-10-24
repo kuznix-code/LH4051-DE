@@ -6,8 +6,11 @@ pkgdesc='Longhorn 4051-inspired desktop environment'
 arch=('@ARCH@')
 url='https://github.com/kuznix-code/LH4051-DE'
 license=('GPL-3.0-or-later')
-depends=('gtk4' 'gtk4-layer-shell')
-makedepends=('git' 'base-devel' 'pkg-config')
+depends=('gtk4' 'glib2')
+optdepends=('gtk4-layer-shell: native Wayland shell surfaces (layer-shell)'
+            'labwc: recommended Wayland compositor for the LH4051-DE session'
+            'appstream: App Store catalog search')
+makedepends=('git' 'base-devel' 'pkgconf' 'gtk4-layer-shell')
 provides=('lh4051-de')
 conflicts=('lh4051-de')
 source=("git+https://github.com/kuznix-code/LH4051-DE.git")
@@ -33,7 +36,7 @@ pkgver() {
 
 build() {
     cd "$srcdir/LH4051-DE"
-    make
+    make PREFIX=/usr
 }
 
 package() {

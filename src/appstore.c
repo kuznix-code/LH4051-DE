@@ -1,552 +1,587 @@
 #include "longhorn.h"
-#ifdef G_OS_UNIX
-#include <gio/gdesktopappinfo.h>
-#include <sys/wait.h>
-#endif
+#include "LH4051-WM/wm.h"
+#include <string.h>
 
 typedef struct {
-    char *id;
-    char *name;
-    char *summary;
-    char *package;
-    char *homepage;
-    char *icon;
+    char *id, *name, *summary, *package, *homepage, *icon;
     GIcon *gicon;
-} LHAppInfo;
+    GAppInfo *app; /* installed apps only */
+} StoreApp;
 
-static void app_info_free(LHAppInfo *info)
+static void store_app_free(StoreApp *a)
 {
-    if (!info) return;
-    g_free(info->id); g_free(info->name); g_free(info->summary);
-    g_free(info->package); g_free(info->homepage); g_free(info->icon);
-    g_clear_object(&info->gicon);
-    g_free(info);
+    if (!a) return;
+    g_free(a->id); g_free(a->name); g_free(a->summary);
+    g_free(a->package); g_free(a->homepage); g_free(a->icon);
+    g_clear_object(&a->gicon);
+    g_clear_object(&a->app);
+    g_free(a);
 }
 
-static const char *detect_package_manager(void)
+/* ---------- package manager ---------- */
+
+typedef enum { PM_NONE, PM_PACKAGEKIT, PM_PACMAN, PM_APT, PM_DNF, PM_ZYPPER, PM_WINGET } PackageManager;
+
+static PackageManager detect_pm(void)
 {
-    if (g_find_program_in_path("pkcon")) return "packagekit";
-    if (g_find_program_in_path("pacman")) return "pacman";
-    if (g_find_program_in_path("apt")) return "apt";
-    if (g_find_program_in_path("dnf")) return "dnf";
-    if (g_find_program_in_path("zypper")) return "zypper";
-    return NULL;
+    if (lh4051_platform_is_windows())
+        return g_find_program_in_path("winget") ? PM_WINGET : PM_NONE;
+    if (g_find_program_in_path("pkcon")) return PM_PACKAGEKIT;
+    if (g_find_program_in_path("pacman")) return PM_PACMAN;
+    if (g_find_program_in_path("apt")) return PM_APT;
+    if (g_find_program_in_path("dnf")) return PM_DNF;
+    if (g_find_program_in_path("zypper")) return PM_ZYPPER;
+    return PM_NONE;
 }
 
-static void show_message(GtkWindow *parent, const char *title, const char *message)
+static const char *pm_name(PackageManager pm)
 {
-    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", title);
-    gtk_alert_dialog_set_detail(dialog, message ? message : "");
-    gtk_alert_dialog_show(dialog, parent);
+    static const char *names[] = {"none", "PackageKit", "pacman", "apt", "dnf", "zypper", "winget"};
+    return names[pm];
 }
+
+/* Builds argv for installing/removing `package`. Returns NULL if unsupported. */
+static GPtrArray *pm_command(PackageManager pm, gboolean install, const char *package)
+{
+    GPtrArray *a = g_ptr_array_new_with_free_func(g_free);
+    const char *verb = install ? "install" : "remove";
+#define ADD(s) g_ptr_array_add(a, g_strdup(s))
+    switch (pm) {
+    case PM_PACKAGEKIT: ADD("pkcon"); ADD("-y"); ADD(verb); ADD(package); break;
+    case PM_PACMAN: ADD("pkexec"); ADD("pacman"); ADD(install ? "-S" : "-R"); ADD("--noconfirm"); ADD(package); break;
+    case PM_APT: ADD("pkexec"); ADD("apt-get"); ADD(verb); ADD("-y"); ADD(package); break;
+    case PM_DNF: ADD("pkexec"); ADD("dnf"); ADD(verb); ADD("-y"); ADD(package); break;
+    case PM_ZYPPER: ADD("pkexec"); ADD("zypper"); ADD("--non-interactive"); ADD(verb); ADD(package); break;
+    case PM_WINGET:
+        ADD("winget"); ADD(install ? "install" : "uninstall"); ADD("--id"); ADD(package); ADD("-e");
+        ADD("--accept-source-agreements");
+        if (install) ADD("--accept-package-agreements");
+        break;
+    default: g_ptr_array_unref(a); return NULL;
+    }
+#undef ADD
+    g_ptr_array_add(a, NULL);
+    return a;
+}
+
+/* ---------- live operation window ---------- */
 
 typedef struct {
-    GtkWidget *output;
-    GtkWidget *status;
-    GtkWidget *close_button;
+    GtkWidget *output, *status, *close;
     GtkWindow *window;
     GSubprocess *process;
-    GDataInputStream *stdout_stream;
-    GDataInputStream *stderr_stream;
-} LHPackageOperation;
+    GDataInputStream *stream;
+    gboolean running;
+    int refs; /* window + wait_async + each pending read */
+} Operation;
 
-static void operation_append(LHPackageOperation *op, const char *prefix, const char *line)
+static void op_unref(Operation *op)
 {
-    if (!op || !op->output || !line) return;
-    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(op->output));
+    if (--op->refs > 0) return;
+    g_clear_object(&op->process);
+    g_clear_object(&op->stream);
+    g_free(op);
+}
+
+static void op_append(Operation *op, const char *line)
+{
+    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(op->output));
     GtkTextIter end;
-    gtk_text_buffer_get_end_iter(buffer, &end);
-    char *text = g_strdup_printf("%s%s\n", prefix ? prefix : "", line);
-    gtk_text_buffer_insert(buffer, &end, text, -1);
-    gtk_text_buffer_get_end_iter(buffer, &end);
+    gtk_text_buffer_get_end_iter(buf, &end);
+    gtk_text_buffer_insert(buf, &end, line, -1);
+    gtk_text_buffer_insert(buf, &end, "\n", -1);
+    gtk_text_buffer_get_end_iter(buf, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(op->output), &end, 0.0, FALSE, 0.0, 1.0);
-    g_free(text);
 }
 
-static void operation_read_line(GObject *source, GAsyncResult *result, gpointer user_data);
+static void op_read_line(GObject *src, GAsyncResult *res, gpointer data);
 
-static void operation_read_next(GDataInputStream *stream, LHPackageOperation *op)
+static void op_read_next(Operation *op)
 {
-    g_data_input_stream_read_line_async(stream, G_PRIORITY_DEFAULT, NULL,
-                                        operation_read_line, op);
+    op->refs++;
+    g_data_input_stream_read_line_async(op->stream, G_PRIORITY_DEFAULT, NULL, op_read_line, op);
 }
 
-static void operation_read_line(GObject *source, GAsyncResult *result, gpointer user_data)
+static void op_read_line(GObject *src, GAsyncResult *res, gpointer data)
 {
-    GDataInputStream *stream = G_DATA_INPUT_STREAM(source);
-    LHPackageOperation *op = user_data;
+    Operation *op = data;
     GError *error = NULL;
-    gsize length = 0;
-    char *line = g_data_input_stream_read_line_finish(stream, result, &length, &error);
-
-    if (line) {
-        operation_append(op, stream == op->stderr_stream ? "[stderr] " : "", line);
-        g_free(line);
-        operation_read_next(stream, op);
-    } else if (error) {
-        operation_append(op, "[error] ", error->message);
-        g_clear_error(&error);
+    char *line = g_data_input_stream_read_line_finish(G_DATA_INPUT_STREAM(src), res, NULL, &error);
+    if (op->window && line) {
+        char *valid = g_utf8_make_valid(line, -1);
+        op_append(op, valid);
+        g_free(valid);
+        op_read_next(op);
+    } else if (op->window && error) {
+        op_append(op, error->message);
     }
+    g_free(line);
+    g_clear_error(&error);
+    op_unref(op);
 }
 
-static void operation_finished(GObject *source, GAsyncResult *result, gpointer user_data)
+static void op_finished(GObject *src, GAsyncResult *res, gpointer data)
 {
-    LHPackageOperation *op = user_data;
+    Operation *op = data;
     GError *error = NULL;
-    gboolean ok = g_subprocess_wait_finish(G_SUBPROCESS(source), result, &error);
-    int status = ok && g_subprocess_get_if_exited(op->process)
-        ? g_subprocess_get_exit_status(op->process) : -1;
-
-    if (error) {
-        operation_append(op, "[error] ", error->message);
-        g_clear_error(&error);
+    gboolean ok = g_subprocess_wait_finish(G_SUBPROCESS(src), res, &error);
+    int status = (ok && g_subprocess_get_if_exited(G_SUBPROCESS(src)))
+                     ? g_subprocess_get_exit_status(G_SUBPROCESS(src)) : -1;
+    g_clear_error(&error);
+    op->running = FALSE;
+    if (op->window) {
+        if (status == 0) {
+            gtk_label_set_text(GTK_LABEL(op->status), "Completed successfully");
+            gtk_widget_add_css_class(op->status, "lh-operation-success");
+        } else {
+            char *m = g_strdup_printf("Operation failed (exit status %d)", status);
+            gtk_label_set_text(GTK_LABEL(op->status), m);
+            gtk_widget_add_css_class(op->status, "lh-operation-failed");
+            g_free(m);
+        }
+        gtk_widget_set_sensitive(op->close, TRUE);
     }
-
-    if (status == 0) {
-        gtk_label_set_text(GTK_LABEL(op->status), "Completed successfully");
-        gtk_widget_add_css_class(op->status, "lh-operation-success");
-    } else {
-        char *message = g_strdup_printf("Package operation failed (exit status %d)", status);
-        gtk_label_set_text(GTK_LABEL(op->status), message);
-        gtk_widget_add_css_class(op->status, "lh-operation-failed");
-        g_free(message);
-    }
-    gtk_widget_set_sensitive(op->close_button, TRUE);
-    if (op->window)
-        gtk_window_set_deletable(op->window, TRUE);
+    op_unref(op);
 }
 
-static LHPackageOperation *package_log(GtkWindow *parent, const char *action,
-                                       const char *package, const char *pm)
+static gboolean op_close_request(GtkWindow *w, gpointer data)
 {
-    GtkWindow *w = GTK_WINDOW(gtk_window_new());
+    Operation *op = data;
+    (void)w;
+    return op->running; /* keep the window while the package manager runs */
+}
+
+static void op_destroyed(GtkWidget *w, gpointer data)
+{
+    Operation *op = data;
+    (void)w;
+    op->window = NULL;
+    op_unref(op);
+}
+
+static void op_close_clicked(GtkButton *b, gpointer data) { (void)b; gtk_window_close(GTK_WINDOW(data)); }
+
+static void run_logged(GtkApplication *app, const char *title, const char *detail, GPtrArray *argv)
+{
     GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    GtkWidget *title = gtk_label_new(g_strcmp0(action, "install") == 0
-        ? "Installing application" : "Uninstalling application");
-    GtkWidget *detail = gtk_label_new(NULL);
-    GtkWidget *frame = gtk_frame_new("Live terminal output");
+    GtkWidget *heading = gtk_label_new(title);
+    GtkWidget *info = gtk_label_new(detail);
     GtkWidget *scroll = gtk_scrolled_window_new();
-    GtkWidget *output = gtk_text_view_new();
-    GtkWidget *status = gtk_label_new("Starting package manager…");
-    GtkWidget *close = gtk_button_new_with_label("Close");
+    Operation *op = g_new0(Operation, 1);
+    GError *error = NULL;
+
+    op->refs = 1; /* the window */
+    op->output = gtk_text_view_new();
+    op->status = gtk_label_new("Starting…");
+    op->close = gtk_button_new_with_label("Close");
 
     gtk_widget_add_css_class(root, "lh-operation");
-    gtk_widget_add_css_class(title, "lh-operation-title");
-    gtk_widget_add_css_class(detail, "lh-operation-detail");
-    gtk_widget_add_css_class(output, "lh-terminal");
-    gtk_widget_add_css_class(status, "lh-operation-status");
-    gtk_widget_add_css_class(close, "lh-operation-close");
-
-    char *text = g_strdup_printf("Package: %s\\nPackage manager: %s\\nAdministrator authentication may be requested.",
-                                 package ? package : "unknown", pm ? pm : "none");
-    gtk_label_set_text(GTK_LABEL(detail), text);
-    gtk_label_set_xalign(GTK_LABEL(title), 0);
-    gtk_label_set_xalign(GTK_LABEL(detail), 0);
-    gtk_label_set_wrap(GTK_LABEL(detail), TRUE);
-
-    gtk_text_view_set_editable(GTK_TEXT_VIEW(output), FALSE);
-    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(output), FALSE);
-    gtk_text_view_set_monospace(GTK_TEXT_VIEW(output), TRUE);
-    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(output), GTK_WRAP_NONE);
+    gtk_widget_add_css_class(heading, "lh-operation-title");
+    gtk_widget_add_css_class(info, "lh-operation-detail");
+    gtk_widget_add_css_class(op->output, "lh-terminal");
+    gtk_widget_add_css_class(op->status, "lh-operation-status");
+    gtk_label_set_xalign(GTK_LABEL(heading), 0);
+    gtk_label_set_xalign(GTK_LABEL(info), 0);
+    gtk_label_set_xalign(GTK_LABEL(op->status), 0);
+    gtk_label_set_wrap(GTK_LABEL(info), TRUE);
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(op->output), FALSE);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(op->output), FALSE);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(op->output), TRUE);
     gtk_widget_set_vexpand(scroll, TRUE);
-    gtk_widget_set_vexpand(output, TRUE);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), output);
-    gtk_frame_set_child(GTK_FRAME(frame), scroll);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), op->output);
+    gtk_box_append(GTK_BOX(root), heading);
+    gtk_box_append(GTK_BOX(root), info);
+    gtk_box_append(GTK_BOX(root), scroll);
+    gtk_box_append(GTK_BOX(root), op->status);
+    gtk_box_append(GTK_BOX(root), op->close);
+    gtk_widget_set_margin_top(root, 14);
+    gtk_widget_set_margin_bottom(root, 14);
+    gtk_widget_set_margin_start(root, 14);
+    gtk_widget_set_margin_end(root, 14);
 
-    gtk_box_append(GTK_BOX(header), title);
-    gtk_box_append(GTK_BOX(header), detail);
-    gtk_box_append(GTK_BOX(root), header);
-    gtk_box_append(GTK_BOX(root), frame);
-    gtk_box_append(GTK_BOX(root), status);
-    gtk_box_append(GTK_BOX(root), close);
+    op->window = lh4051_wm_create_window(app, "LH4051 App Store — Operation", 720, 480, root);
+    g_signal_connect(op->close, "clicked", G_CALLBACK(op_close_clicked), op->window);
+    g_signal_connect(op->window, "close-request", G_CALLBACK(op_close_request), op);
+    g_signal_connect(op->window, "destroy", G_CALLBACK(op_destroyed), op);
+    gtk_window_present(op->window);
 
-    gtk_widget_set_vexpand(frame, TRUE);
-    gtk_widget_set_margin_top(root, 16);
-    gtk_widget_set_margin_bottom(root, 16);
-    gtk_widget_set_margin_start(root, 16);
-    gtk_widget_set_margin_end(root, 16);
-
-    gtk_window_set_title(w, "LH4051 App Store — Package Operation");
-    gtk_window_set_default_size(w, 760, 520);
-    gtk_window_set_transient_for(w, parent);
-    gtk_window_set_child(w, root);
-    gtk_window_set_deletable(w, FALSE);
-    gtk_widget_set_sensitive(close, FALSE);
-    g_signal_connect_swapped(close, "clicked", G_CALLBACK(gtk_window_destroy), w);
-    gtk_window_present(w);
-    g_free(text);
-
-    LHPackageOperation *op = g_new0(LHPackageOperation, 1);
-    op->output = output;
-    op->status = status;
-    op->close_button = close;
-    op->window = w;
-    return op;
+    op->process = g_subprocess_newv((const char *const *)argv->pdata,
+        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error);
+    if (!op->process) {
+        op_append(op, error ? error->message : "Could not start the command.");
+        gtk_label_set_text(GTK_LABEL(op->status), "Could not start the package manager");
+        gtk_widget_add_css_class(op->status, "lh-operation-failed");
+        g_clear_error(&error);
+        return; /* window owns op; released in op_destroyed */
+    }
+    op->running = TRUE;
+    op->refs++; /* wait_async */
+    gtk_widget_set_sensitive(op->close, FALSE);
+    gtk_label_set_text(GTK_LABEL(op->status), "Running…");
+    op->stream = g_data_input_stream_new(g_subprocess_get_stdout_pipe(op->process));
+    op_read_next(op);
+    g_subprocess_wait_async(op->process, NULL, op_finished, op);
 }
 
-static void package_command(const char *action, const char *package, GtkWindow *parent)
+/* ---------- confirm + start package action ---------- */
+
+typedef struct { GtkApplication *app; GtkWindow *parent; char *package; gboolean install; PackageManager pm; } PendingAction;
+
+static void pending_free(PendingAction *p) { g_free(p->package); g_free(p); }
+
+static void confirm_answer(GObject *src, GAsyncResult *res, gpointer data)
 {
-    if (!package || !*package) return;
-
-    const char *pm = detect_package_manager();
-    LHPackageOperation *op = package_log(parent, action, package, pm);
-
-    if (!pm) {
-        operation_append(op, "[error] ", "No supported package manager was found.");
-        gtk_label_set_text(GTK_LABEL(op->status), "No package manager found");
-        gtk_widget_set_sensitive(op->close_button, TRUE);
-        gtk_window_set_deletable(op->window, TRUE);
-        g_free(op);
-        return;
-    }
-
-    const char *argv[6] = {0};
-    if (g_strcmp0(pm, "packagekit") == 0) {
-        argv[0] = "pkcon";
-        argv[1] = g_strcmp0(action, "install") == 0 ? "install" : "remove";
-        argv[2] = package;
-    } else {
-        argv[0] = "pkexec";
-        if (g_strcmp0(pm, "pacman") == 0) {
-            argv[1] = "pacman"; argv[2] = g_strcmp0(action, "install") == 0 ? "-S" : "-R";
-            argv[3] = "--noconfirm"; argv[4] = package;
-        } else if (g_strcmp0(pm, "apt") == 0) {
-            argv[1] = "apt"; argv[2] = g_strcmp0(action, "install") == 0 ? "install" : "remove";
-            argv[3] = "-y"; argv[4] = package;
-        } else if (g_strcmp0(pm, "dnf") == 0) {
-            argv[1] = "dnf"; argv[2] = g_strcmp0(action, "install") == 0 ? "install" : "remove";
-            argv[3] = "-y"; argv[4] = package;
-        } else {
-            argv[1] = "zypper"; argv[2] = g_strcmp0(action, "install") == 0 ? "install" : "remove";
-            argv[3] = "-y"; argv[4] = package;
+    PendingAction *p = data;
+    GError *error = NULL;
+    int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(src), res, &error);
+    g_clear_error(&error);
+    if (choice == 1) {
+        GPtrArray *argv = pm_command(p->pm, p->install, p->package);
+        if (argv) {
+            char *detail = g_strdup_printf("Package: %s\nPackage manager: %s\nAdministrator authentication may be requested.",
+                                           p->package, pm_name(p->pm));
+            run_logged(p->app, p->install ? "Installing application" : "Uninstalling application", detail, argv);
+            g_free(detail);
+            g_ptr_array_unref(argv);
         }
     }
+    g_object_unref(src);
+    pending_free(p);
+}
 
-    GError *error = NULL;
-    GSubprocess *process = g_subprocess_newv(argv,
-        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error);
-    if (!process) {
-        operation_append(op, "[error] ", error ? error->message : "Could not start package manager.");
-        gtk_label_set_text(GTK_LABEL(op->status), "Could not start package manager");
-        gtk_widget_set_sensitive(op->close_button, TRUE);
-        gtk_window_set_deletable(op->window, TRUE);
-        g_clear_error(&error);
-        g_free(op);
+static void package_clicked(GtkButton *b, gpointer data)
+{
+    GtkWindow *parent = GTK_WINDOW(data);
+    PackageManager pm = detect_pm();
+    const char *package = g_object_get_data(G_OBJECT(b), "lh-package");
+    gboolean install = g_object_get_data(G_OBJECT(b), "lh-install") != NULL;
+    GtkAlertDialog *dialog;
+    PendingAction *p;
+    char *title, *detail;
+    const char *buttons[3];
+
+    if (!package) return;
+    if (pm == PM_NONE) {
+        dialog = gtk_alert_dialog_new("No package manager found");
+        gtk_alert_dialog_set_detail(dialog, lh4051_platform_is_windows()
+            ? "winget is required to install applications. Install \"App Installer\" from the Microsoft Store."
+            : "No supported package manager (PackageKit, pacman, apt, dnf, zypper) was found.");
+        gtk_alert_dialog_show(dialog, parent);
+        g_object_unref(dialog);
         return;
     }
 
-    op->process = g_object_ref(process);
-    op->stdout_stream = g_data_input_stream_new(g_subprocess_get_stdout_pipe(process));
-    op->stderr_stream = g_data_input_stream_new(g_subprocess_get_stderr_pipe(process));
-    operation_read_next(op->stdout_stream, op);
-    operation_read_next(op->stderr_stream, op);
-    g_subprocess_wait_async(process, NULL, operation_finished, op);
-    g_object_unref(process);
-}
+    p = g_new0(PendingAction, 1);
+    p->app = gtk_window_get_application(parent);
+    p->parent = parent;
+    p->package = g_strdup(package);
+    p->install = install;
+    p->pm = pm;
 
-static void package_confirm_finished(GObject *source, GAsyncResult *result, gpointer user_data)
-{
-    GtkAlertDialog *dialog = GTK_ALERT_DIALOG(source);
-    GError *error = NULL;
-    int choice = gtk_alert_dialog_choose_finish(dialog, result, &error);
-    if (!error && choice == 1)
-        package_command(g_object_get_data(G_OBJECT(dialog), "lh-action-copy"),
-                        g_object_get_data(G_OBJECT(dialog), "lh-package-copy"),
-                        g_object_get_data(G_OBJECT(dialog), "lh-parent"));
-    g_clear_error(&error);
-    g_object_unref(dialog);
-    (void)user_data;
-}
-
-static void confirm_package_action(GtkButton *button, gpointer data)
-{
-    const char *action = g_object_get_data(G_OBJECT(button), "lh-action");
-    const char *package = g_object_get_data(G_OBJECT(button), "lh-package");
-    GtkWindow *parent = GTK_WINDOW(data);
-    if (!action || !package || !*package) return;
-
-    char *title = g_strdup_printf("%s application?", g_strcmp0(action, "install") == 0 ? "Install" : "Uninstall");
-    char *detail = g_strdup_printf("Package: %s\nPackage manager: %s\n\nThis operation may require administrator authentication.",
-                                    package, detect_package_manager() ? detect_package_manager() : "none");
-    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", title);
+    title = g_strdup_printf("%s application?", install ? "Install" : "Uninstall");
+    detail = g_strdup_printf("Package: %s\nPackage manager: %s\n\nThis may require administrator authentication.",
+                             package, pm_name(pm));
+    dialog = gtk_alert_dialog_new("%s", title);
     gtk_alert_dialog_set_detail(dialog, detail);
-    const char *buttons[] = {"Cancel", g_strcmp0(action, "install") == 0 ? "Install" : "Uninstall", NULL};
+    buttons[0] = "Cancel"; buttons[1] = install ? "Install" : "Uninstall"; buttons[2] = NULL;
     gtk_alert_dialog_set_buttons(dialog, buttons);
-    gtk_alert_dialog_set_default_button(dialog, 1);
     gtk_alert_dialog_set_cancel_button(dialog, 0);
-    g_object_set_data_full(G_OBJECT(dialog), "lh-action-copy", g_strdup(action), g_free);
-    g_object_set_data_full(G_OBJECT(dialog), "lh-package-copy", g_strdup(package), g_free);
-    g_object_set_data(G_OBJECT(dialog), "lh-parent", parent);
-    gtk_alert_dialog_choose(dialog, parent, NULL,
-        (GAsyncReadyCallback)package_confirm_finished, NULL);
-    g_free(title);
-    g_free(detail);
+    gtk_alert_dialog_set_default_button(dialog, 0);
+    gtk_alert_dialog_choose(dialog, parent, NULL, confirm_answer, p);
+    g_free(title); g_free(detail);
 }
 
-static void launch_app(GtkButton *button, gpointer data)
+/* ---------- cards ---------- */
+
+static void open_app(GtkButton *b, gpointer data)
 {
-#ifdef G_OS_UNIX
-    const char *id = g_object_get_data(G_OBJECT(button), "lh-app-id");
-    GAppInfo *info = id ? G_APP_INFO(g_desktop_app_info_new(id)) : NULL;
+    StoreApp *a = data;
     GError *error = NULL;
-    (void)data;
-    if (!info) return;
-    if (!g_app_info_launch(info, NULL, NULL, &error)) {
-        g_warning("LH4051 App Store: %s", error ? error->message : "application launch failed");
+    (void)b;
+    if (a->app && !g_app_info_launch(a->app, NULL, NULL, &error)) {
+        g_warning("LH4051 App Store: %s", error ? error->message : "launch failed");
         g_clear_error(&error);
     }
-    g_object_unref(info);
-#else
-    (void)button; (void)data;
-#endif
 }
 
-static void app_about(GtkButton *button, gpointer data)
+static void about_app(GtkButton *b, gpointer data)
 {
-    LHAppInfo *info = g_object_get_data(G_OBJECT(button), "lh-app-info");
-    if (!info) return;
-    GtkWindow *parent = GTK_WINDOW(data);
-    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", info->name ? info->name : "Application");
+    StoreApp *a = data;
+    GtkAlertDialog *dialog = gtk_alert_dialog_new("%s", a->name ? a->name : "Application");
     char *detail = g_strdup_printf("%s\n\nIdentifier: %s\nPackage: %s\nHomepage: %s",
-        info->summary ? info->summary : "No description available.",
-        info->id ? info->id : "unknown",
-        info->package ? info->package : "unknown",
-        info->homepage ? info->homepage : "not provided");
+        a->summary ? a->summary : "No description available.", a->id ? a->id : "unknown",
+        a->package ? a->package : "unknown", a->homepage ? a->homepage : "not provided");
     gtk_alert_dialog_set_detail(dialog, detail);
-    gtk_alert_dialog_show(dialog, parent);
+    gtk_alert_dialog_show(dialog, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))));
     g_free(detail);
+    g_object_unref(dialog);
 }
 
-static GtkWidget *make_icon(LHAppInfo *info)
-{
-    GtkWidget *image = NULL;
-    if (info->gicon)
-        image = gtk_image_new_from_gicon(info->gicon);
-    else if (info->icon && *info->icon) {
-        if (g_path_is_absolute(info->icon))
-            image = gtk_image_new_from_file(info->icon);
-        else
-            image = gtk_image_new_from_icon_name(info->icon);
-    }
-    if (!image)
-        image = gtk_image_new_from_icon_name("application-x-executable");
-    gtk_image_set_pixel_size(GTK_IMAGE(image), 56);
-    gtk_widget_add_css_class(image, "lh-store-app-icon");
-    return image;
-}
-
-static GtkWidget *make_app_card(LHAppInfo *info, GtkWindow *parent, gboolean installed)
+static GtkWidget *make_card(StoreApp *a, GtkWindow *parent, gboolean installed)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
     GtkWidget *icon_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 7);
-    GtkWidget *title = gtk_label_new(info->name ? info->name : "Application");
-    GtkWidget *summary = gtk_label_new(info->summary ? info->summary : "");
+    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *title = gtk_label_new(a->name ? a->name : "Application");
+    GtkWidget *summary = gtk_label_new(a->summary ? a->summary : "");
+    GtkWidget *image, *b;
+
+    if (a->gicon) image = gtk_image_new_from_gicon(a->gicon);
+    else if (a->icon && g_path_is_absolute(a->icon)) image = gtk_image_new_from_file(a->icon);
+    else image = gtk_image_new_from_icon_name(a->icon && *a->icon ? a->icon : "application-x-executable");
+    gtk_image_set_pixel_size(GTK_IMAGE(image), 48);
 
     gtk_widget_add_css_class(card, "lh-store-app-card");
     gtk_widget_add_css_class(icon_box, "lh-store-icon-box");
-    gtk_widget_add_css_class(body, "lh-store-app-body");
     gtk_widget_add_css_class(title, "lh-store-app-name");
     gtk_widget_add_css_class(summary, "lh-store-app-summary");
     gtk_widget_set_hexpand(body, TRUE);
     gtk_label_set_xalign(GTK_LABEL(title), 0);
     gtk_label_set_xalign(GTK_LABEL(summary), 0);
     gtk_label_set_wrap(GTK_LABEL(summary), TRUE);
-    gtk_label_set_max_width_chars(GTK_LABEL(summary), 70);
+    gtk_label_set_max_width_chars(GTK_LABEL(summary), 60);
+    gtk_label_set_lines(GTK_LABEL(summary), 2);
+    gtk_label_set_ellipsize(GTK_LABEL(summary), PANGO_ELLIPSIZE_END);
 
-    gtk_box_append(GTK_BOX(icon_box), make_icon(info));
+    gtk_box_append(GTK_BOX(icon_box), image);
     gtk_box_append(GTK_BOX(body), title);
     gtk_box_append(GTK_BOX(body), summary);
 
-    GtkWidget *about = gtk_button_new_with_label("About");
-    g_object_set_data(G_OBJECT(about), "lh-app-info", info);
-    g_signal_connect(about, "clicked", G_CALLBACK(app_about), parent);
-    gtk_box_append(GTK_BOX(actions), about);
-
-    if (installed && info->id) {
-        GtkWidget *launch = gtk_button_new_with_label("Open");
-        g_object_set_data_full(G_OBJECT(launch), "lh-app-id", g_strdup(info->id), g_free);
-        g_signal_connect(launch, "clicked", G_CALLBACK(launch_app), NULL);
-        gtk_box_append(GTK_BOX(actions), launch);
+    b = gtk_button_new_with_label("About");
+    g_signal_connect(b, "clicked", G_CALLBACK(about_app), a);
+    gtk_box_append(GTK_BOX(actions), b);
+    if (installed && a->app) {
+        b = gtk_button_new_with_label("Open");
+        g_signal_connect(b, "clicked", G_CALLBACK(open_app), a);
+        gtk_box_append(GTK_BOX(actions), b);
     }
-
-    if (info->package) {
-        GtkWidget *action = gtk_button_new_with_label(installed ? "Uninstall" : "Install");
-        g_object_set_data(G_OBJECT(action), "lh-action", installed ? "remove" : "install");
-        g_object_set_data_full(G_OBJECT(action), "lh-package", g_strdup(info->package), g_free);
-        g_signal_connect(action, "clicked", G_CALLBACK(confirm_package_action), parent);
-        gtk_box_append(GTK_BOX(actions), action);
+    if (a->package) {
+        b = gtk_button_new_with_label(installed ? "Uninstall" : "Install");
+        g_object_set_data_full(G_OBJECT(b), "lh-package", g_strdup(a->package), g_free);
+        if (!installed) g_object_set_data(G_OBJECT(b), "lh-install", GINT_TO_POINTER(1));
+        g_signal_connect(b, "clicked", G_CALLBACK(package_clicked), parent);
+        gtk_box_append(GTK_BOX(actions), b);
     }
-
     gtk_box_append(GTK_BOX(body), actions);
     gtk_box_append(GTK_BOX(card), icon_box);
     gtk_box_append(GTK_BOX(card), body);
+    g_object_set_data_full(G_OBJECT(card), "lh-store-app", a, (GDestroyNotify)store_app_free);
     return card;
 }
 
-static LHAppInfo *app_info_from_appstream(const char *block)
+/* ---------- AppStream search ---------- */
+
+static StoreApp *parse_appstream_block(const char *block)
 {
-    LHAppInfo *info = g_new0(LHAppInfo, 1);
-    gchar **lines = g_strsplit(block, "\n", -1);
+    StoreApp *a = g_new0(StoreApp, 1);
+    char **lines = g_strsplit(block, "\n", -1);
     for (guint i = 0; lines[i]; i++) {
-        char *line = g_strstrip(lines[i]);
-        char *colon = strchr(line, ':');
+        char *line = lines[i], *colon = strchr(line, ':');
+        char *value;
         if (!colon) continue;
         *colon = 0;
-        char *value = g_strstrip(colon + 1);
-        if (g_strcmp0(line, "Identifier") == 0) info->id = g_strdup(value);
-        else if (g_strcmp0(line, "Name") == 0) info->name = g_strdup(value);
-        else if (g_strcmp0(line, "Summary") == 0) info->summary = g_strdup(value);
-        else if (g_strcmp0(line, "Package") == 0) info->package = g_strdup(value);
-        else if (g_strcmp0(line, "Homepage") == 0) info->homepage = g_strdup(value);
-        else if (g_strcmp0(line, "Icon") == 0) info->icon = g_strdup(value);
+        value = g_strstrip(colon + 1);
+        g_strstrip(line);
+        if (g_strcmp0(line, "Identifier") == 0) {
+            char *sp = strchr(value, ' '); /* "org.foo.Bar [desktop-application]" */
+            a->id = sp ? g_strndup(value, (gsize)(sp - value)) : g_strdup(value);
+        }
+        else if (g_strcmp0(line, "Name") == 0) a->name = g_strdup(value);
+        else if (g_strcmp0(line, "Summary") == 0) a->summary = g_strdup(value);
+        else if (g_strcmp0(line, "Package") == 0) a->package = g_strdup(value);
+        else if (g_strcmp0(line, "Homepage") == 0) a->homepage = g_strdup(value);
+        else if (g_strcmp0(line, "Icon") == 0) { g_free(a->icon); a->icon = g_strdup(value); }
     }
     g_strfreev(lines);
-    if (!info->name && !info->id) { app_info_free(info); return NULL; }
-    return info;
+    if (!a->name && !a->id) { store_app_free(a); return NULL; }
+    return a;
 }
 
-static void populate_search_results(GtkWidget *flow, const char *output, GtkWindow *parent)
+typedef struct { GtkWidget *flow, *status; GtkWindow *window; guint generation; } SearchCtx;
+
+static guint search_generation;
+
+static void clear_flow(GtkWidget *flow)
 {
-    gchar **blocks = g_strsplit(output ? output : "", "\n---\n", -1);
-    for (guint i = 0; blocks[i]; i++) {
-        LHAppInfo *info = app_info_from_appstream(blocks[i]);
-        if (!info) continue;
-        GtkWidget *card = make_app_card(info, parent, FALSE);
-        g_object_set_data_full(G_OBJECT(card), "lh-app-info", info, (GDestroyNotify)app_info_free);
-        gtk_flow_box_insert(GTK_FLOW_BOX(flow), card, -1);
-    }
-    g_strfreev(blocks);
+    GtkWidget *c;
+    while ((c = gtk_widget_get_first_child(flow)) != NULL) gtk_flow_box_remove(GTK_FLOW_BOX(flow), c);
 }
 
-static void search_store(GtkButton *button, gpointer data)
+static void search_done(GObject *src, GAsyncResult *res, gpointer data)
 {
-    GtkWidget *entry = g_object_get_data(G_OBJECT(button), "lh-entry");
-    GtkWidget *flow = g_object_get_data(G_OBJECT(button), "lh-results");
-    const char *query = gtk_editable_get_text(GTK_EDITABLE(entry));
-    (void)data;
-
-    while (gtk_widget_get_first_child(flow))
-        gtk_flow_box_remove(GTK_FLOW_BOX(flow), gtk_widget_get_first_child(flow));
-
-    if (!query || !*query) return;
-
-    const gchar *argv[] = {"appstreamcli", "search", query, NULL};
+    SearchCtx *ctx = data;
+    char *out = NULL, *err = NULL;
     GError *error = NULL;
-    GSubprocess *process = g_subprocess_newv(
-        argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error);
-    if (!process) {
-        show_message(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(button))),
-                     "AppStream unavailable",
-                     error ? error->message : "appstreamcli was not found.");
+    guint found = 0;
+    gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(src), res, &out, &err, &error);
+
+    if (!ctx->flow || !ctx->status || ctx->generation != search_generation) {
+        /* window closed or a newer search superseded this one */
+    } else if (ok) {
+        char **blocks = g_strsplit(out ? out : "", "\n---\n", -1);
+        for (guint i = 0; blocks[i]; i++) {
+            StoreApp *a = parse_appstream_block(blocks[i]);
+            if (!a) continue;
+            gtk_flow_box_insert(GTK_FLOW_BOX(ctx->flow), make_card(a, ctx->window, FALSE), -1);
+            found++;
+        }
+        g_strfreev(blocks);
+        {
+            char *m = found ? g_strdup_printf("%u result%s", found, found == 1 ? "" : "s")
+                            : g_strdup("No matching applications.");
+            gtk_label_set_text(GTK_LABEL(ctx->status), m);
+            g_free(m);
+        }
+    } else {
+        gtk_label_set_text(GTK_LABEL(ctx->status), error ? error->message : "Search failed.");
+    }
+    g_clear_error(&error);
+    g_free(out); g_free(err);
+    if (ctx->flow) g_object_remove_weak_pointer(G_OBJECT(ctx->flow), (gpointer *)&ctx->flow);
+    if (ctx->status) g_object_remove_weak_pointer(G_OBJECT(ctx->status), (gpointer *)&ctx->status);
+    g_object_unref(src);
+    g_free(ctx);
+}
+
+static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkWindow *window)
+{
+    const char *query = gtk_editable_get_text(GTK_EDITABLE(entry));
+    GSubprocess *proc;
+    GError *error = NULL;
+    SearchCtx *ctx;
+
+    search_generation++;
+    clear_flow(flow);
+    if (!query || !*query) { gtk_label_set_text(GTK_LABEL(status), "Type a name to search."); return; }
+
+    if (!g_find_program_in_path("appstreamcli")) {
+        gtk_label_set_text(GTK_LABEL(status), lh4051_platform_is_windows()
+            ? "Catalog search needs AppStream (not available on Windows). Use winget to find packages."
+            : "Catalog search needs appstreamcli (package: appstream).");
+        return;
+    }
+    proc = g_subprocess_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE, &error,
+                            "appstreamcli", "search", query, NULL);
+    if (!proc) {
+        gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not run appstreamcli.");
         g_clear_error(&error);
         return;
     }
-
-    gchar *out = NULL, *err = NULL;
-    if (g_subprocess_communicate_utf8(process, NULL, NULL, &out, &err, &error)) {
-        populate_search_results(flow, out, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(button))));
-        if (!out || !*out)
-            show_message(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(button))),
-                         "No results", "AppStream did not return any matching applications.");
-    } else {
-        show_message(GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(button))),
-                     "Search failed", error ? error->message : "AppStream search failed.");
-    }
-    g_free(out); g_free(err); g_clear_error(&error);
-    g_object_unref(process);
+    ctx = g_new0(SearchCtx, 1);
+    ctx->flow = flow; ctx->status = status; ctx->window = window;
+    ctx->generation = ++search_generation;
+    g_object_add_weak_pointer(G_OBJECT(flow), (gpointer *)&ctx->flow);
+    g_object_add_weak_pointer(G_OBJECT(status), (gpointer *)&ctx->status);
+    gtk_label_set_text(GTK_LABEL(status), "Searching…");
+    g_subprocess_communicate_utf8_async(proc, NULL, NULL, search_done, ctx);
 }
 
-static void populate_installed_apps(GtkWidget *flow, GtkWindow *parent)
+static void search_clicked(GtkButton *b, gpointer data)
 {
-#ifdef G_OS_UNIX
+    (void)data;
+    do_search(g_object_get_data(G_OBJECT(b), "lh-entry"), g_object_get_data(G_OBJECT(b), "lh-results"),
+              g_object_get_data(G_OBJECT(b), "lh-status"), GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))));
+}
+
+static void search_entry_activate(GtkSearchEntry *e, gpointer data)
+{
+    gtk_widget_activate(GTK_WIDGET(data));
+    (void)e;
+}
+
+/* ---------- installed apps ---------- */
+
+static void populate_installed(GtkWidget *flow, GtkWindow *parent)
+{
     GList *apps = g_app_info_get_all();
     for (GList *l = apps; l; l = l->next) {
-        GAppInfo *ginfo = l->data;
-        if (!g_app_info_should_show(ginfo) || !g_app_info_get_display_name(ginfo)) continue;
-        LHAppInfo *info = g_new0(LHAppInfo, 1);
-        info->id = g_strdup(g_app_info_get_id(ginfo));
-        info->name = g_strdup(g_app_info_get_display_name(ginfo));
-        info->summary = g_strdup(g_app_info_get_description(ginfo));
-        info->package = NULL;
-        info->gicon = g_app_info_get_icon(ginfo);
-        if (info->gicon) g_object_ref(info->gicon);
-        GtkWidget *card = make_app_card(info, parent, TRUE);
-        g_object_set_data_full(G_OBJECT(card), "lh-app-info", info, (GDestroyNotify)app_info_free);
-        gtk_flow_box_insert(GTK_FLOW_BOX(flow), card, -1);
+        GAppInfo *info = l->data;
+        StoreApp *a;
+        if (!g_app_info_should_show(info) || !g_app_info_get_display_name(info)) continue;
+        a = g_new0(StoreApp, 1);
+        a->id = g_strdup(g_app_info_get_id(info));
+        a->name = g_strdup(g_app_info_get_display_name(info));
+        a->summary = g_strdup(g_app_info_get_description(info));
+        a->gicon = g_app_info_get_icon(info) ? g_object_ref(g_app_info_get_icon(info)) : NULL;
+        a->app = g_object_ref(info);
+        gtk_flow_box_insert(GTK_FLOW_BOX(flow), make_card(a, parent, TRUE), -1);
     }
     g_list_free_full(apps, g_object_unref);
-#else
-    gtk_flow_box_insert(GTK_FLOW_BOX(flow), gtk_label_new("Installed application discovery is unavailable."), -1);
-#endif
 }
 
-void create_lh4051_appstore(GtkApplication *app)
+static GtkWindow *existing; /* single instance */
+
+static void on_store_destroy(GtkWidget *w, gpointer d)
 {
-    GtkWidget *window_widget = gtk_application_window_new(app);
-    GtkWindow *win = GTK_WINDOW(window_widget);
+    (void)w; (void)d;
+    existing = NULL;
+}
+
+void lh4051_appstore_open(GtkApplication *app)
+{
+    if (existing) { gtk_window_present(existing); return; }
+
     GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    GtkWidget *search_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *entry = gtk_search_entry_new();
     GtkWidget *search = gtk_button_new_with_label("Search");
-    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-    GtkWidget *results_scroll = gtk_scrolled_window_new();
-    GtkWidget *results = gtk_flow_box_new();
-    GtkWidget *apps_scroll = gtk_scrolled_window_new();
-    GtkWidget *apps = gtk_flow_box_new();
-
-    gtk_window_set_title(win, "LH4051 App Store");
-    gtk_window_set_default_size(win, 1000, 720);
-    gtk_widget_add_css_class(root, "lh-store");
-    gtk_window_set_child(win, root);
-
+    GtkWidget *status = gtk_label_new("Search the AppStream catalog or manage installed applications.");
+    GtkWidget *results = gtk_flow_box_new(), *installed = gtk_flow_box_new();
+    GtkWidget *rscroll = gtk_scrolled_window_new(), *iscroll = gtk_scrolled_window_new();
+    GtkWidget *rlabel = gtk_label_new("Catalog results"), *ilabel = gtk_label_new("Installed applications");
     GtkWidget *title = gtk_label_new("LH4051 App Store");
-    GtkWidget *subtitle = gtk_label_new("Search AppStream applications and manage packages");
+    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+
+    gtk_widget_add_css_class(root, "lh-store");
+    gtk_widget_add_css_class(header, "lh-store-header");
     gtk_widget_add_css_class(title, "lh-store-title");
-    gtk_widget_add_css_class(subtitle, "lh-store-subtitle");
+    gtk_widget_add_css_class(status, "lh-store-status");
+    gtk_widget_add_css_class(rlabel, "lh-store-section");
+    gtk_widget_add_css_class(ilabel, "lh-store-section");
+    gtk_widget_add_css_class(entry, "lh-store-search");
+    gtk_widget_add_css_class(search, "lh-store-search-button");
     gtk_label_set_xalign(GTK_LABEL(title), 0);
-    gtk_label_set_xalign(GTK_LABEL(subtitle), 0);
-    gtk_box_append(GTK_BOX(header), title);
-    gtk_box_append(GTK_BOX(header), subtitle);
+    gtk_label_set_xalign(GTK_LABEL(status), 0);
+    gtk_label_set_xalign(GTK_LABEL(rlabel), 0);
+    gtk_label_set_xalign(GTK_LABEL(ilabel), 0);
 
     gtk_widget_set_hexpand(entry, TRUE);
-    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(entry),
-                                          "Search applications...");
-    gtk_box_append(GTK_BOX(search_row), entry);
-    gtk_box_append(GTK_BOX(search_row), search);
-    gtk_box_append(GTK_BOX(header), search_row);
+    gtk_box_append(GTK_BOX(row), entry);
+    gtk_box_append(GTK_BOX(row), search);
+    gtk_box_append(GTK_BOX(header), title);
+    gtk_box_append(GTK_BOX(header), row);
+    gtk_box_append(GTK_BOX(header), status);
     gtk_box_append(GTK_BOX(root), header);
 
-    gtk_widget_set_vexpand(content, TRUE);
-    gtk_box_append(GTK_BOX(root), content);
-
-    GtkWidget *rlabel = gtk_label_new("AppStream results");
-    gtk_label_set_xalign(GTK_LABEL(rlabel), 0);
-    gtk_box_append(GTK_BOX(content), rlabel);
-    gtk_widget_set_vexpand(results_scroll, TRUE);
+    gtk_widget_set_margin_start(body, 12);
+    gtk_widget_set_margin_end(body, 12);
+    gtk_widget_set_margin_top(body, 8);
+    gtk_widget_set_margin_bottom(body, 8);
+    gtk_widget_set_vexpand(body, TRUE);
+    gtk_box_append(GTK_BOX(body), rlabel);
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(results), GTK_SELECTION_NONE);
-    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(results), 3);
-    gtk_flow_box_set_min_children_per_line(GTK_FLOW_BOX(results), 1);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(results_scroll), results);
-    gtk_box_append(GTK_BOX(content), results_scroll);
-
-    GtkWidget *ilabel = gtk_label_new("Installed applications");
-    gtk_label_set_xalign(GTK_LABEL(ilabel), 0);
-    gtk_box_append(GTK_BOX(content), ilabel);
-    gtk_widget_set_vexpand(apps_scroll, TRUE);
-    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(apps), GTK_SELECTION_NONE);
-    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(apps), 6);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(apps_scroll), apps);
-    gtk_box_append(GTK_BOX(content), apps_scroll);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(results), 2);
+    gtk_widget_set_vexpand(rscroll, TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(rscroll), results);
+    gtk_box_append(GTK_BOX(body), rscroll);
+    gtk_box_append(GTK_BOX(body), ilabel);
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(installed), GTK_SELECTION_NONE);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(installed), 2);
+    gtk_widget_set_vexpand(iscroll, TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(iscroll), installed);
+    gtk_box_append(GTK_BOX(body), iscroll);
+    gtk_box_append(GTK_BOX(root), body);
 
     g_object_set_data(G_OBJECT(search), "lh-entry", entry);
     g_object_set_data(G_OBJECT(search), "lh-results", results);
-    g_signal_connect(search, "clicked", G_CALLBACK(search_store), NULL);
-    g_signal_connect(entry, "activate", G_CALLBACK(search_store), search);
+    g_object_set_data(G_OBJECT(search), "lh-status", status);
+    g_signal_connect(search, "clicked", G_CALLBACK(search_clicked), NULL);
+    g_signal_connect(entry, "activate", G_CALLBACK(search_entry_activate), search);
 
-    populate_installed_apps(apps, win);
-    gtk_window_present(win);
+    existing = lh4051_wm_create_window(app, "LH4051 App Store", 980, 720, root);
+    g_signal_connect(existing, "destroy", G_CALLBACK(on_store_destroy), NULL);
+    populate_installed(installed, existing);
+    gtk_window_present(existing);
 }

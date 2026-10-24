@@ -1,0 +1,84 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libglib2.0-dev-bin
+          sudo apt-get install -y libgtk4-layer-shell-dev || echo "layer-shell not available; building composite-only"
+      - name: Build
+        run: make -j$(nproc) show-config all
+      - name: Smoke test
+        run: ./build/linux-gcc/lh4051-de --version
+      - name: Package
+        run: make dist-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-linux-x64
+          path: dist/*.tar.gz
+
+  windows-x64-mingw:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make zip
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-adwaita-icon-theme
+      - name: Build
+        run: make -j$(nproc) win64
+      - name: Smoke test
+        run: ./build/windows-mingw/lh4051-de.exe --version
+      - name: Bundle
+        run: make dist-win64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-windows-x64
+          path: |
+            dist/*.zip
+
+  windows-x64-msvc:
+    # Experimental: needs a prebuilt GTK4 for MSVC (gvsbuild release).
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Fetch GTK4 (gvsbuild)
+        shell: pwsh
+        run: |
+          gh release download --repo wingtk/gvsbuild --pattern 'GTK4_Gvsbuild_*_x64.zip' --dir gtkdl
+          Expand-Archive gtkdl/*.zip -DestinationPath C:\gtk
+          choco install pkgconfiglite make -y --no-progress
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Build
+        shell: cmd
+        run: |
+          set PATH=C:\gtk\bin;%PATH%
+          make msvc GTK_PREFIX=C:/gtk PKG_CONFIG=pkg-config GLIB_COMPILE_RESOURCES=C:/gtk/bin/glib-compile-resources.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-windows-msvc
+          path: build/windows-msvc/lh4051-de.exe

@@ -1,48 +1,48 @@
 #include "longhorn.h"
 #include "LH4051-SESSION/session.h"
 
-void load_shell_css(void) {
-    GtkCssProvider *provider=gtk_css_provider_new();
-    gtk_css_provider_load_from_string(provider,
-        "window { font-family: Sans; }"
-        ".lh-desktop { background:#4f86ad; }"
-        ".lh-wallpaper { background:linear-gradient(180deg,#70b4d7 0%,#9bd1e5 45%,#d8c88b 72%,#8d9849 100%); } .lh-wallpaper-fallback { background:linear-gradient(180deg,#70b4d7 0%,#9bd1e5 45%,#d8c88b 72%,#8d9849 100%); }"
-        ".lh-watermark { color:rgba(255,255,255,.78); font-size:12px; padding:6px 10px; }"
-        ".lh-panel { background:linear-gradient(180deg,#59646e 0%,#323b44 48%,#202830 100%); color:#fff; }"
-        ".lh-task { min-height:34px; margin:4px 2px; padding:0 10px; border-radius:4px; border:1px solid rgba(255,255,255,.24); background:linear-gradient(#66727d,#303942); color:white; }"
-        ".lh-start { min-width:86px; min-height:34px; margin:4px 5px 4px 6px; border-radius:5px; border:1px solid #b7c7d2; background:linear-gradient(#6f8798,#263642); color:white; font-weight:bold; }"
-        ".lh-tray { padding:0 9px; border-left:1px solid rgba(255,255,255,.16); }"
-        ".lh-clock { font-size:12px; font-weight:600; min-width:72px; }"
-        ".lh-sidebar { background:rgba(28,35,42,.90); color:white; border-left:1px solid rgba(255,255,255,.30); }"
-        ".lh-tile { margin:8px; padding:12px; border-radius:5px; background:rgba(70,82,94,.70); border:1px solid rgba(255,255,255,.15); }"
-        ".lh-tile-title { font-weight:bold; color:#dce7ef; } .lh-digital { font-size:18px; font-weight:600; }"
-        ".lh-start-menu { background:#e9e5d8; border:1px solid #6f7b84; box-shadow:0 8px 24px rgba(0,0,0,.35); } .lh-start-left { background:linear-gradient(180deg,#6d8799,#263541); color:white; }"
-        ".lh-start-header { padding:12px; font-weight:bold; font-size:16px; } .lh-start-item { min-height:42px; margin:2px 8px; padding:5px 8px; border-radius:3px; } .lh-start-right { color:#26313a; padding:10px; }"
-        ".lh-explorer { background:#f5f5f5; color:#17212a; } .lh-start-item:hover { background:#d7e8f3; } .lh-start-search { margin:6px 8px; } .lh-start-section { font-weight:bold; padding:8px 10px 4px; color:#334b5c; } .lh-settings { background:#edf2f5; } .lh-settings-card { margin:10px; padding:14px; background:white; border:1px solid #b8c4cc; border-radius:5px; } .lh-store { background:#11161b; color:#e8edf1; } .lh-store-card { margin:10px; padding:12px; background:#20262d; border:1px solid #3d4852; border-radius:7px; } .lh-titlebar { background:linear-gradient(#dfe5e9,#9ba8b1); color:#17212a; } .lh-close { background:linear-gradient(#ef665e,#b52c28); color:white; min-width:42px; }"
-        ".lh-toolbar { background:#e2e6e8; border-bottom:1px solid #aab2b7; } .lh-phode { background:linear-gradient(90deg,#3982bd,#8bbce0); color:white; padding:14px; } .lh-filter { background:#e8ecef; border-right:1px solid #bdc5ca; } .lh-menu { background:#f0f0f0; } .lh-settings-heading { font-size:16px; font-weight:bold; color:#334b5c; } .lh-settings-description { color:#52636e; } .lh-store-section { font-weight:bold; padding:6px 2px; color:#c7d6df; font-size:14px; } .lh-store-app { margin:2px 10px; padding:8px; } .lh-store-results { margin:10px; padding:8px; } scrollbar slider { min-width:8px; min-height:8px; }" ".lh-store-header { padding:20px 22px; background:linear-gradient(135deg,#1b2a35,#12171c); border-bottom:1px solid #34414b; } .lh-store-brand { margin-bottom:4px; } .lh-store-mark { min-width:46px; min-height:46px; padding:8px; border-radius:10px; background:linear-gradient(135deg,#3b80ad,#1e4d6b); color:white; font-size:20px; font-weight:bold; } .lh-store-search { min-height:42px; background:#20282f; color:#edf3f7; border:1px solid #46535e; } .lh-store-search-button { min-height:42px; padding:0 20px; background:#2d6d98; color:white; border:1px solid #4d88ad; } .lh-store-app-card { min-width:0; margin:0; padding:14px; border-radius:9px; background:#1c2228; border:1px solid #35414a; } .lh-store-app-card:hover { background:#222a31; border-color:#4b6170; } .lh-store-icon-box { min-width:64px; min-height:64px; padding:4px; border-radius:10px; background:#11171c; border:1px solid #33404a; } .lh-store-app-icon { margin:4px; } .lh-store-app-name { font-size:15px; font-weight:700; color:#edf3f7; } .lh-store-app-summary { color:#aebbc4; } .lh-operation { background:#10151a; color:#e8eef2; } .lh-operation-title { font-size:18px; font-weight:700; color:#f1f5f7; } .lh-operation-detail { color:#aebbc4; } .lh-operation-frame { background:#080b0e; border:1px solid #36424c; } .lh-terminal { background:#080b0e; color:#d5e3d9; padding:12px; font-family:monospace; font-size:12px; } .lh-operation-status { color:#9fb0ba; } .lh-operation-success { color:#72d69a; } .lh-operation-failed { color:#ff817b; } .lh-operation-close { min-height:36px; }"
-    );
-    gtk_style_context_add_provider_for_display(gdk_display_get_default(),GTK_STYLE_PROVIDER(provider),GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(provider);
+static gboolean opt_windowed;
+
+static void on_activate(GApplication *app, gpointer user_data)
+{
+    (void)user_data;
+    if (lh4051_session_app()) return; /* shell already running */
+    lh4051_prefs_load();
+    lh4051_theme_load();
+    lh4051_session_start(GTK_APPLICATION(app), opt_windowed);
 }
 
-static void on_activate(GtkApplication *app,gpointer user_data){
-    (void)user_data;
-    g_print("Starting LH4051-DE %s session...\n",LH4051_VERSION);
-    GtkSettings *settings = gtk_settings_get_default();
-    if (settings)
-        g_object_set(settings, "gtk-application-prefer-dark-theme", TRUE, NULL);
-    load_shell_css();
-    lh4051_session_start(app);
-}
-static void on_shutdown(GApplication *app,gpointer user_data){
+static void on_shutdown(GApplication *app, gpointer user_data)
+{
     (void)app; (void)user_data;
     lh4051_session_stop();
 }
-int main(int argc,char*argv[]){
-    GtkApplication*app=gtk_application_new("org.kuznix.lh4051de",G_APPLICATION_DEFAULT_FLAGS);
-    g_signal_connect(app,"activate",G_CALLBACK(on_activate),NULL);
-    g_signal_connect(app,"shutdown",G_CALLBACK(on_shutdown),NULL);
-    int status=g_application_run(G_APPLICATION(app),argc,argv);
+
+static gint on_local_options(GApplication *app, GVariantDict *options, gpointer user_data)
+{
+    (void)app; (void)user_data;
+    if (g_variant_dict_contains(options, "version")) {
+        g_print("LH4051-DE %s\n", LH4051_VERSION);
+        return 0;
+    }
+    opt_windowed = g_variant_dict_contains(options, "windowed");
+    return -1; /* continue normal startup */
+}
+
+int main(int argc, char *argv[])
+{
+    GtkApplication *app = gtk_application_new("org.kuznix.lh4051de", G_APPLICATION_DEFAULT_FLAGS);
+    int status;
+
+    g_application_add_main_option(G_APPLICATION(app), "windowed", 'w', G_OPTION_FLAG_NONE,
+                                  G_OPTION_ARG_NONE, "Run the shell in a normal window instead of full screen", NULL);
+    g_application_add_main_option(G_APPLICATION(app), "version", 'v', G_OPTION_FLAG_NONE,
+                                  G_OPTION_ARG_NONE, "Print the version and exit", NULL);
+    g_signal_connect(app, "handle-local-options", G_CALLBACK(on_local_options), NULL);
+    g_signal_connect(app, "activate", G_CALLBACK(on_activate), NULL);
+    g_signal_connect(app, "shutdown", G_CALLBACK(on_shutdown), NULL);
+
+    status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
     return status;
 }
