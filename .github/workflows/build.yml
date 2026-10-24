@@ -94,7 +94,7 @@ jobs:
             dist/*Installer*.pkg
 
   # ------------------------------------------------------------------ BSD
-  # Experimental: builds inside a VM on a Linux runner.
+  # Experimental: builds inside a VM on a Linux runner. (OpenBSD/NetBSD are not built in CI.)
   freebsd:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -114,28 +114,6 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*Installer*.run
-
-  openbsd:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: vmactions/openbsd-vm@v1
-        with:
-          usesh: true
-          prepare: pkg_add gmake gtk4 pkgconf
-          run: gmake show-config all && ./build/bsd-gcc/lh4051-de --version
-
-  netbsd:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: vmactions/netbsd-vm@v1
-        with:
-          usesh: true
-          prepare: /usr/sbin/pkg_add gmake gtk4 pkgconf
-          run: gmake show-config all && ./build/bsd-gcc/lh4051-de --version
 
   # -------------------------------------------------------------- Windows
   # MinGW-w64 through MSYS2. The plain MINGW64 environment is phased out
