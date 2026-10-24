@@ -32,13 +32,15 @@ make dist-linux              # dist/lh4051-de-<ver>-linux-<arch>.tar.gz
 `gtk4-layer-shell` is optional; without it the shell uses composite mode.
 
 ### Windows — MinGW-w64 (MSYS2)
-In an **MSYS2 MINGW64** shell:
+MSYS2 has phased out the plain MINGW64 environment; use **UCRT64** (x64), **CLANG64**, or **CLANGARM64** (ARM64).
+In an **MSYS2 UCRT64** shell:
 ```sh
-pacman -S make zip mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf \
-          mingw-w64-x86_64-gtk4 mingw-w64-x86_64-adwaita-icon-theme
+pacman -S make zip mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-pkgconf \
+          mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-adwaita-icon-theme
 make win64                   # build/windows-mingw/lh4051-de.exe
-make dist-win64              # dist/lh4051-de-<ver>-win64.zip with the GTK runtime bundled
+make dist-win64              # dist/lh4051-de-<ver>-win-x64.zip with the GTK runtime bundled
 ```
+In CLANG64/CLANGARM64 there is no gcc: use `make win64 CC=clang` (set `WIN_ARCH=arm64` to name the bundle).
 Cross-compiling from Linux works too if a MinGW GTK4 sysroot exists (`MINGW_PREFIX=/usr/x86_64-w64-mingw32`,
 or an MXE/Fedora `x86_64-w64-mingw32-pkg-config`): `make win64`.
 

@@ -32,6 +32,8 @@ LTO     ?= 0
 MARCH   ?=
 CONSOLE ?= 0
 LAYER_SHELL ?= auto
+# WIN_ARCH only names the Windows bundle (x64, x86, arm64).
+WIN_ARCH ?= x64
 
 PREFIX  ?= /usr/local
 DESTDIR ?=
@@ -61,14 +63,14 @@ ifneq (,$(filter default undefined,$(origin CC)))
   else ifeq ($(TOOLCHAIN),clang)
     CC := clang
   else
-    CC := gcc
+    CC := $(if $(shell command -v gcc 2>/dev/null),gcc,clang)
   endif
 endif
 
 ifeq ($(IS_CROSS),1)
   WINDRES ?= $(TRIPLE)-windres
 else
-  WINDRES ?= windres
+  WINDRES ?= $(if $(shell command -v windres 2>/dev/null),windres,llvm-windres)
 endif
 
 PKG_CONFIG ?= pkg-config
@@ -130,15 +132,16 @@ else
   CFLAGS_ALL := -std=gnu11 -Wall -Wextra -Wformat=2 -Werror=format-security -pipe -fno-strict-aliasing -MMD -MP \
                 $(if $(filter 1,$(DEBUG)),-O0 -g,-O2) $(if $(MARCH),-march=$(MARCH),) $(if $(filter 1,$(LTO)),-flto,) \
                 $(DEFS) -Isrc $(PC_CFLAGS)
-  LDFLAGS_ALL := $(if $(filter 1,$(LTO)),-flto,) -Wl,--as-needed
+  LDFLAGS_ALL := $(if $(filter 1,$(LTO)),-flto,)
   ifeq ($(TARGET_OS),linux)
+    LDFLAGS_ALL += -Wl,--as-needed
     ifeq ($(DEBUG),0)
       CFLAGS_ALL  += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE
       LDFLAGS_ALL += -pie -Wl,-z,relro,-z,now
     endif
   endif
   ifeq ($(TARGET_OS),windows)
-    LDFLAGS_ALL += -static-libgcc $(if $(filter 1,$(CONSOLE)),,-mwindows)
+    LDFLAGS_ALL += $(if $(filter 1,$(CONSOLE)),,-mwindows)
     PC_LIBS += -lshell32
   endif
   CFLAGS_ALL  += $(CFLAGS)
@@ -303,7 +306,7 @@ dist-linux:
 
 dist-win64:
 	@$(MAKE) --no-print-directory win64
-	@sh scripts/bundle-win.sh "build/windows-mingw/$(NAME).exe" "dist/$(NAME)-$(VERSION)-win64" "$(TRIPLE)"
+	@sh scripts/bundle-win.sh "build/windows-mingw/$(NAME).exe" "dist/$(NAME)-$(VERSION)-win-$(WIN_ARCH)" "$(TRIPLE)"
 
 dist-arch:
 	@command -v makepkg >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1 || { echo "dist-arch needs pacman/makepkg"; exit 2; }
@@ -328,7 +331,7 @@ help:
 	@echo "  make run [ARGS=-w]   build and run"
 	@echo "  make install         install to PREFIX (default /usr/local; DESTDIR supported)"
 	@echo "  make dist-linux      dist/lh4051-de-<ver>-linux-<arch>.tar.gz"
-	@echo "  make dist-win64      dist/lh4051-de-<ver>-win64/ + .zip with bundled GTK runtime"
+	@echo "  make dist-win64      dist/lh4051-de-<ver>-win-<arch>/ + .zip with bundled GTK runtime"
 	@echo "  make dist-arch       Arch package via makepkg"
 	@echo "  make show-config     print the resolved toolchain/flags"
 	@echo "  make clean"

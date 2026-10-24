@@ -6,8 +6,19 @@ on:
   workflow_dispatch:
 
 jobs:
-  linux-x64:
-    runs-on: ubuntu-24.04
+  # ---------------------------------------------------------------- Linux
+  linux:
+    name: linux-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            # GitHub's Linux arm64 label (there is no "ubuntu-latest-arm").
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -23,11 +34,36 @@ jobs:
         run: make dist-linux
       - uses: actions/upload-artifact@v4
         with:
-          name: lh4051-de-linux-x64
+          name: lh4051-de-linux-${{ matrix.arch }}
           path: dist/*.tar.gz
 
-  windows-x64-mingw:
-    runs-on: windows-latest
+  # -------------------------------------------------------------- Windows
+  # MinGW-w64 through MSYS2. The plain MINGW64 environment is phased out
+  # (no gtk4 package); x64 uses UCRT64, ARM64 uses CLANGARM64.
+  windows-mingw:
+    name: windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            msystem: UCRT64
+            cc: gcc
+            experimental: false
+          - arch: arm64
+            runner: windows-11-arm
+            msystem: CLANGARM64
+            cc: clang
+            experimental: false
+          - arch: x86
+            # 32-bit MSYS2 packages are being reduced; GTK4 may be missing.
+            runner: windows-latest
+            msystem: MINGW32
+            cc: gcc
+            experimental: true
     defaults:
       run:
         shell: msys2 {0}
@@ -35,29 +71,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: true
-          install: >-
-            make zip
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-gtk4
-            mingw-w64-x86_64-glib2
-            mingw-w64-x86_64-adwaita-icon-theme
+          install: make zip
+          # pacboy expands ":p" to the right prefix for the environment
+          # (mingw-w64-ucrt-x86_64-, mingw-w64-clang-aarch64-, mingw-w64-i686-, ...)
+          pacboy: >-
+            toolchain:p
+            pkgconf:p
+            gtk4:p
+            glib2:p
+            adwaita-icon-theme:p
       - name: Build
-        run: make -j$(nproc) win64
+        run: make -j$(nproc) win64 CC=${{ matrix.cc }} show-config
       - name: Smoke test
         run: ./build/windows-mingw/lh4051-de.exe --version
       - name: Bundle
-        run: make dist-win64
+        run: make dist-win64 CC=${{ matrix.cc }} WIN_ARCH=${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: lh4051-de-windows-x64
-          path: |
-            dist/*.zip
+          name: lh4051-de-windows-${{ matrix.arch }}
+          path: dist/*.zip
 
-  windows-x64-msvc:
-    # Experimental: needs a prebuilt GTK4 for MSVC (gvsbuild release).
+  # ----------------------------------------------------------------- MSVC
+  # Experimental: cl.exe + a prebuilt GTK4 from gvsbuild. GNU make and a
+  # native pkgconf come from MSYS2 UCRT64; MSVC's environment is inherited.
+  windows-msvc:
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -69,15 +108,31 @@ jobs:
         shell: pwsh
         run: |
           gh release download --repo wingtk/gvsbuild --pattern 'GTK4_Gvsbuild_*_x64.zip' --dir gtkdl
-          Expand-Archive gtkdl/*.zip -DestinationPath C:\gtk
-          choco install pkgconfiglite make -y --no-progress
+          Expand-Archive (Get-ChildItem gtkdl/*.zip).FullName -DestinationPath C:\gtk
+          # The zip may or may not have a top-level folder: locate the real prefix.
+          $pc = Get-ChildItem C:\gtk -Recurse -Filter gtk4.pc | Select-Object -First 1
+          if (-not $pc) { throw "gtk4.pc not found in the gvsbuild archive" }
+          $prefix = (Split-Path (Split-Path (Split-Path $pc.FullName))) -replace '\\','/'
+          "GTK_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "GTK_PREFIX=$prefix"
         env:
           GH_TOKEN: ${{ github.token }}
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit   # keep the MSVC PATH/INCLUDE/LIB from msvc-dev-cmd
+          update: true
+          install: make
+          pacboy: >-
+            pkgconf:p
+            glib2:p
       - name: Build
-        shell: cmd
+        shell: msys2 {0}
         run: |
-          set PATH=C:\gtk\bin;%PATH%
-          make msvc GTK_PREFIX=C:/gtk PKG_CONFIG=pkg-config GLIB_COMPILE_RESOURCES=C:/gtk/bin/glib-compile-resources.exe
+          # MSYS2's coreutils `link` would shadow MSVC's link.exe.
+          rm -f /usr/bin/link.exe
+          export PATH="$GTK_PREFIX/bin:$PATH"
+          make msvc CC=cl GTK_PREFIX="$GTK_PREFIX" show-config
       - uses: actions/upload-artifact@v4
         with:
           name: lh4051-de-windows-msvc
