@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=LH4051-DE (windowed)
+Comment=Longhorn Build 4051 style desktop, in a window
+Exec=@bindir@/lh4051-de --windowed
+TryExec=@bindir@/lh4051-de
+Icon=preferences-desktop-theme
+Terminal=false
+Type=Application
+Categories=System;
+X-LH4051-Version=@version@

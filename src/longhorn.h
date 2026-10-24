@@ -3,11 +3,18 @@
 
 #include <gtk/gtk.h>
 
-#define LH4051_VERSION "0.0.0"
+#define LH4051_VERSION "0.1.0"
 #define LH4051_RES "/org/kuznix/lh4051de/"
 #define LH4051_PANEL_HEIGHT 40
 #define LH4051_SIDEBAR_WIDTH 240
 #define LH4051_SIDEBAR_COLLAPSED 22
+
+/* OS family (compile time). Windows is detected through G_OS_WIN32. */
+#if defined(__APPLE__) && defined(__MACH__)
+#define LH_OS_MACOS 1
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#define LH_OS_BSD 1
+#endif
 
 #if !GLIB_CHECK_VERSION(2, 74, 0)
 #define G_APPLICATION_DEFAULT_FLAGS G_APPLICATION_FLAGS_NONE
@@ -18,8 +25,23 @@ void lh4051_theme_load(void);
 
 /* platform.c */
 gboolean lh4051_platform_is_windows(void);
+const char *lh4051_platform_name(void); /* linux, windows, macos, freebsd, openbsd, netbsd, dragonfly, unix */
 const char *lh4051_platform_backend(GdkDisplay *display);
+gboolean lh4051_open_uri_checked(const char *uri, GError **error);
 void lh4051_open_uri(const char *uri);
+
+/* Installed applications, sorted by name. Linux/BSD/Windows use GIO app
+ * registration; macOS also scans /Applications and ~/Applications. */
+typedef struct {
+    char *name;
+    char *summary;
+    char *id;
+    GIcon *icon;
+    GAppInfo *info;   /* GIO-registered application, or NULL */
+    char *path;       /* .app bundle path (macOS), or NULL */
+} LHApp;
+GPtrArray *lh4051_apps_list(void); /* free with g_ptr_array_unref */
+gboolean lh4051_app_launch(const LHApp *app, GError **error);
 void lh4051_open_recycle_bin(void);
 char *lh4051_computer_root(void);
 const char *lh4051_user_dir(GUserDirectory dir);

@@ -30,12 +30,112 @@ jobs:
         run: make -j$(nproc) show-config all
       - name: Smoke test
         run: ./build/linux-gcc/lh4051-de --version
-      - name: Package
-        run: make dist-linux
+      - name: Package + LH4051-DE Installer
+        run: make dist-linux installer-unix TARGET_OS=linux
       - uses: actions/upload-artifact@v4
         with:
           name: lh4051-de-linux-${{ matrix.arch }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
+
+  # Linux x86 (32-bit): GitHub has no i386 runners, so build inside an
+  # i386 Alpine container (QEMU/binfmt). Experimental.
+  linux-x86:
+    name: linux-x86
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - name: Build in i386 Alpine
+        run: |
+          docker run --rm --platform linux/386 -v "$PWD:/src" -w /src i386/alpine:edge sh -euc '
+            apk add --no-cache build-base pkgconf make gtk4.0-dev glib-dev tar
+            apk add --no-cache gtk4-layer-shell-dev || echo "no layer-shell"
+            make TARGET_OS=linux show-config all
+            ./build/linux-gcc/lh4051-de --version
+            make TARGET_OS=linux DIST_ARCH=i686 dist-linux installer-unix
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-linux-x86
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
+
+  # ---------------------------------------------------------------- macOS
+  macos:
+    name: macos-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-15-intel   # Intel
+          - arch: arm64
+            runner: macos-latest     # Apple Silicon
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install gtk4 pkgconf
+      - name: Build
+        run: make -j$(sysctl -n hw.ncpu) macos show-config
+      - name: Smoke test
+        run: ./build/macos-clang/lh4051-de --version
+      - name: App bundle + LH4051-DE Installer (.pkg)
+        run: make installer-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-macos-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*Installer*.pkg
+
+  # ------------------------------------------------------------------ BSD
+  # Experimental: builds inside a VM on a Linux runner.
+  freebsd:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y gmake gtk4 pkgconf glib
+          run: |
+            gmake show-config all
+            ./build/bsd-gcc/lh4051-de --version
+            gmake dist-unix installer-unix TARGET_OS=bsd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-freebsd-x64
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
+
+  openbsd:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg_add gmake gtk4 pkgconf
+          run: gmake show-config all && ./build/bsd-gcc/lh4051-de --version
+
+  netbsd:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          prepare: /usr/sbin/pkg_add gmake gtk4 pkgconf
+          run: gmake show-config all && ./build/bsd-gcc/lh4051-de --version
 
   # -------------------------------------------------------------- Windows
   # MinGW-w64 through MSYS2. The plain MINGW64 environment is phased out
@@ -58,12 +158,6 @@ jobs:
             msystem: CLANGARM64
             cc: clang
             experimental: false
-          - arch: x86
-            # 32-bit MSYS2 packages are being reduced; GTK4 may be missing.
-            runner: windows-latest
-            msystem: MINGW32
-            cc: gcc
-            experimental: true
     defaults:
       run:
         shell: msys2 {0}
@@ -88,10 +182,20 @@ jobs:
         run: ./build/windows-mingw/lh4051-de.exe --version
       - name: Bundle
         run: make dist-win64 CC=${{ matrix.cc }} WIN_ARCH=${{ matrix.arch }}
+      - name: LH4051-DE Installer (Inno Setup)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" | Select-Object -First 1 }
+          $ver = (Select-String -Path src/longhorn.h -Pattern 'LH4051_VERSION "(.*)"').Matches[0].Groups[1].Value
+          & $iscc.FullName /Qp "/DAppVersion=$ver" "/DArch=${{ matrix.arch }}" "/DSourceDir=$PWD\dist\lh4051-de-$ver-win-${{ matrix.arch }}" "/DOutDir=$PWD\dist" installer\lh4051-de.iss
       - uses: actions/upload-artifact@v4
         with:
           name: lh4051-de-windows-${{ matrix.arch }}
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*Installer*.exe
 
   # ----------------------------------------------------------------- MSVC
   # Experimental: cl.exe + a prebuilt GTK4 from gvsbuild. GNU make and a
@@ -137,3 +241,20 @@ jobs:
         with:
           name: lh4051-de-windows-msvc
           path: build/windows-msvc/lh4051-de.exe
+
+  # -------------------------------------------------------------- Release
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows-mingw]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

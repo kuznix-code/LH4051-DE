@@ -84,51 +84,41 @@ static void show_pinned(GtkButton *b, gpointer d)
 
 /* ---------- program list ---------- */
 
+static GPtrArray *start_apps; /* owned; rows keep non-owning pointers */
+
 static void app_row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer data)
 {
-    GAppInfo *info = g_object_get_data(G_OBJECT(row), "lh-app");
+    const LHApp *app = g_object_get_data(G_OBJECT(row), "lh-app");
     GError *error = NULL;
     (void)list; (void)data;
-    if (info && !g_app_info_launch(info, NULL, NULL, &error)) {
-        g_warning("LH4051: cannot launch %s: %s", g_app_info_get_display_name(info),
-                  error ? error->message : "unknown error");
+    if (app && !lh4051_app_launch(app, &error)) {
+        g_warning("LH4051: cannot launch %s: %s", app->name, error ? error->message : "unknown error");
         g_clear_error(&error);
     }
     hide_menu();
 }
 
-static gint compare_apps(gconstpointer a, gconstpointer b)
-{
-    return g_utf8_collate(g_app_info_get_display_name((GAppInfo *)a), g_app_info_get_display_name((GAppInfo *)b));
-}
-
 static void populate_apps(GtkWidget *list)
 {
-    GList *apps = g_list_sort(g_app_info_get_all(), compare_apps);
-    guint count = 0;
-    for (GList *l = apps; l; l = l->next) {
-        GAppInfo *info = l->data;
-        GtkWidget *row, *box, *img, *label;
-        GIcon *icon;
-        if (!g_app_info_should_show(info) || !g_app_info_get_display_name(info)) continue;
-        row = gtk_list_box_row_new();
-        box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-        icon = g_app_info_get_icon(info);
-        img = icon ? gtk_image_new_from_gicon(icon) : gtk_image_new_from_icon_name("application-x-executable");
+    start_apps = lh4051_apps_list();
+    for (guint i = 0; i < start_apps->len; i++) {
+        LHApp *app = g_ptr_array_index(start_apps, i);
+        GtkWidget *row = gtk_list_box_row_new();
+        GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        GtkWidget *img = app->icon ? gtk_image_new_from_gicon(app->icon)
+                                   : gtk_image_new_from_icon_name("application-x-executable");
+        GtkWidget *label = gtk_label_new(app->name);
         gtk_image_set_pixel_size(GTK_IMAGE(img), 24);
-        label = gtk_label_new(g_app_info_get_display_name(info));
         gtk_label_set_xalign(GTK_LABEL(label), 0);
         gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
         gtk_box_append(GTK_BOX(box), img);
         gtk_box_append(GTK_BOX(box), label);
         gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
         gtk_widget_add_css_class(row, "lh-start-row");
-        g_object_set_data_full(G_OBJECT(row), "lh-app", g_object_ref(info), g_object_unref);
+        g_object_set_data(G_OBJECT(row), "lh-app", app);
         gtk_list_box_append(GTK_LIST_BOX(list), row);
-        count++;
     }
-    g_list_free_full(apps, g_object_unref);
-    if (!count) {
+    if (!start_apps->len) {
         GtkWidget *empty = gtk_label_new("No registered applications were found.");
         gtk_widget_add_css_class(empty, "lh-start-empty");
         gtk_list_box_append(GTK_LIST_BOX(list), empty);
@@ -138,12 +128,12 @@ static void populate_apps(GtkWidget *list)
 static gboolean app_filter(GtkListBoxRow *row, gpointer data)
 {
     const char *q = gtk_editable_get_text(GTK_EDITABLE(search_entry));
-    GAppInfo *info = g_object_get_data(G_OBJECT(row), "lh-app");
+    const LHApp *app = g_object_get_data(G_OBJECT(row), "lh-app");
     char *a, *b;
     gboolean match;
     (void)data;
-    if (!q || !*q || !info) return TRUE;
-    a = g_utf8_casefold(g_app_info_get_display_name(info), -1);
+    if (!q || !*q || !app) return TRUE;
+    a = g_utf8_casefold(app->name, -1);
     b = g_utf8_casefold(q, -1);
     match = strstr(a, b) != NULL;
     g_free(a); g_free(b);
@@ -169,6 +159,7 @@ static void on_start_destroy(GtkWidget *w, gpointer d)
 {
     (void)w; (void)d;
     stack = search_entry = app_list = NULL;
+    g_clear_pointer(&start_apps, g_ptr_array_unref);
 }
 
 /* ---------- construction ---------- */
