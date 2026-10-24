@@ -1,9 +1,8 @@
 [Desktop Entry]
 Name=LH4051-DE
-Comment=Longhorn 4051 inspired desktop shell for Wayland
-Exec=@bindir@/lh4051-de
+Comment=Longhorn Build 4051 style desktop (Wayland, layer-shell compositor required)
+Exec=@bindir@/lh4051-de-session --wayland
 TryExec=@bindir@/lh4051-de
 Type=Application
 DesktopNames=LH4051-DE
-X-GDM-SessionRegisters=true
-X-KDE-PluginInfo-Version=0.0.0
+X-LH4051-Version=@version@

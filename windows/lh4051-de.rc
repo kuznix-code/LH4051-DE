@@ -1,0 +1,29 @@
+#include <winver.h>
+#include "version.h"
+
+1 24 "lh4051-de.manifest"
+
+1 VERSIONINFO
+ FILEVERSION LH_RC_VERSION
+ PRODUCTVERSION LH_RC_VERSION
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "kuznix-code"
+      VALUE "FileDescription", "LH4051-DE (Longhorn Build 4051 style desktop)"
+      VALUE "FileVersion", LH_RC_VERSION_STR
+      VALUE "InternalName", "lh4051-de"
+      VALUE "OriginalFilename", "lh4051-de.exe"
+      VALUE "ProductName", "LH4051-DE"
+      VALUE "ProductVersion", LH_RC_VERSION_STR
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 0x04B0
+  END
+END

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Starts a login session that runs the LH4051-DE shell.
+# The shell itself is not a compositor / window manager, so this wrapper starts
+# one first. Override with LH4051_COMPOSITOR=<command>.
+#   lh4051-de-session --wayland   (default when WAYLAND session)
+#   lh4051-de-session --x11
+set -u
+mode="${1:-}"
+[ -z "$mode" ] && { [ "${XDG_SESSION_TYPE:-}" = x11 ] && mode=--x11 || mode=--wayland; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+if [ "$mode" = --x11 ]; then
+    if [ -n "${LH4051_COMPOSITOR:-}" ]; then
+        $LH4051_COMPOSITOR &
+    else
+        for wm in openbox xfwm4 marco metacity icewm fluxbox; do
+            if have "$wm"; then "$wm" & break; fi
+        done
+    fi
+    exec lh4051-de
+fi
+
+# Wayland: the shell uses wlr-layer-shell, so the compositor must support it
+# (labwc, sway, wayfire, river, hyprland...).
+if [ -n "${LH4051_COMPOSITOR:-}" ]; then
+    exec $LH4051_COMPOSITOR
+fi
+if have labwc; then
+    exec labwc -s lh4051-de
+elif have sway; then
+    cfg="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/lh4051-sway.XXXXXX")"
+    printf 'exec lh4051-de\nfloating_modifier Mod4\n' > "$cfg"
+    exec sway -c "$cfg"
+fi
+echo "lh4051-de-session: no supported Wayland compositor found (install labwc or sway," >&2
+echo "or set LH4051_COMPOSITOR)." >&2
+exit 1

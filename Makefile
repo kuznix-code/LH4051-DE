@@ -1,550 +1,337 @@
-# LH4051-DE Makefile
-VERSION := 0.0.0
-CC ?= gcc
-PKG_CONFIG ?= pkg-config
+# LH4051-DE — GNU make build system
+#
+#   Linux (gcc/clang)        make
+#   Windows, MinGW-w64       make win64          (MSYS2 MINGW64 shell, or cross from Linux)
+#   Windows, MSVC            make msvc GTK_PREFIX=C:/gtk   (run from a VS developer prompt)
+#
+# Run `make help` for all targets and variables.
 
-# Use TARGET=... to select a toolchain explicitly.
-# With no TARGET, detect the current host OS/CPU automatically.
-# Host target detection. Keep OS/distro/architecture detection in Make conditionals
-# rather than a large shell case statement, avoiding shell quoting problems.
-HOST_OS := $(shell uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')
-HOST_ARCH := $(shell uname -m 2>/dev/null)
-HOST_DISTRO := $(shell if [ -f /etc/os-release ]; then . /etc/os-release; printf '%s' "$$ID"; fi)
-HOST_CPU_VENDOR := $(shell awk -F: '/^vendor_id[[:space:]]*:/ {print $$2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
-HOST_CPU_FAMILY := $(shell awk -F: '/^cpu family[[:space:]]*:/ {print $$2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
-HOST_CPU_MODEL := $(shell awk -F: '/^model[[:space:]]*:/ {print $$2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
-HOST_CPU_FLAGS := $(shell awk -F: '/^flags[[:space:]]*:/ {sub(/^[[:space:]]*/, "", $$2); print $$2; exit}' /proc/cpuinfo 2>/dev/null)
+NAME    := lh4051-de
+VERSION := $(shell sed -n 's/^\#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)
 
-ifeq ($(HOST_OS),linux)
-  ifeq ($(HOST_ARCH),x86_64)
-    ifeq ($(HOST_DISTRO),cachyos)
-      ifneq (,$(findstring avx512f,$(HOST_CPU_FLAGS)))
-        ifneq (,$(findstring avx512bw,$(HOST_CPU_FLAGS)))
-          ifneq (,$(findstring avx512cd,$(HOST_CPU_FLAGS)))
-            ifneq (,$(findstring avx512dq,$(HOST_CPU_FLAGS)))
-              ifneq (,$(findstring avx512vl,$(HOST_CPU_FLAGS)))
-                DEFAULT_TARGET := linux-cachy-v4
-              else
-                DEFAULT_TARGET := linux-cachy-v3
-              endif
-            else
-              DEFAULT_TARGET := linux-cachy-v3
-            endif
-          else
-            DEFAULT_TARGET := linux-cachy-v3
-          endif
-        else
-          DEFAULT_TARGET := linux-cachy-v3
-        endif
-      else ifneq (,$(findstring avx2,$(HOST_CPU_FLAGS)))
-        DEFAULT_TARGET := linux-cachy-v3
-      else
-        DEFAULT_TARGET := linux-cachy
-      endif
-    else ifeq ($(HOST_DISTRO),ubuntu)
-      DEFAULT_TARGET := linux-ubuntu-x86_64
-    else ifeq ($(HOST_DISTRO),debian)
-      DEFAULT_TARGET := linux-debian-x86_64
-    else ifeq ($(HOST_DISTRO),fedora)
-      DEFAULT_TARGET := linux-fedora-x86_64
-    else ifeq ($(HOST_DISTRO),arch)
-      DEFAULT_TARGET := linux-arch-x86_64
-    else
-      DEFAULT_TARGET := linux-generic-x86_64
-    endif
-  else ifeq ($(HOST_ARCH),aarch64)
-    DEFAULT_TARGET := linux-generic-aarch64
-  else ifneq (,$(filter $(HOST_ARCH),armv7l armv7))
-    DEFAULT_TARGET := linux-generic-armv7
-  else ifneq (,$(filter $(HOST_ARCH),armv6l armv6))
-    DEFAULT_TARGET := linux-generic-armv6
-  else ifneq (,$(filter $(HOST_ARCH),i386 i486 i586 i686))
-    DEFAULT_TARGET := linux-generic-i686
-  else ifeq ($(HOST_ARCH),riscv64)
-    DEFAULT_TARGET := linux-generic-riscv64
-  else ifeq ($(HOST_ARCH),ppc64le)
-    DEFAULT_TARGET := linux-generic-ppc64el
-  else ifeq ($(HOST_ARCH),ppc64)
-    DEFAULT_TARGET := linux-generic-ppc64
-  else ifeq ($(HOST_ARCH),s390x)
-    DEFAULT_TARGET := linux-generic-s390x
-  else ifneq (,$(filter mips mipsel mips64 mips64el,$(HOST_ARCH)))
-    DEFAULT_TARGET := linux-generic-mips
-  else
-    DEFAULT_TARGET := generic
-  endif
-else ifeq ($(HOST_OS),darwin)
-  ifneq (,$(filter $(HOST_ARCH),x86_64 amd64))
-    DEFAULT_TARGET := darwin-x86_64
-  else ifeq ($(HOST_ARCH),arm64)
-    DEFAULT_TARGET := darwin-aarch64
-  else
-    DEFAULT_TARGET := generic
-  endif
-else ifeq ($(HOST_OS),freebsd)
-  ifneq (,$(filter $(HOST_ARCH),x86_64 amd64))
-    DEFAULT_TARGET := freebsd-x86_64
-  else ifneq (,$(filter $(HOST_ARCH),aarch64 arm64))
-    DEFAULT_TARGET := freebsd-aarch64
-  else
-    DEFAULT_TARGET := generic
-  endif
+# ---------------------------------------------------------------------------
+# Host / target selection
+# ---------------------------------------------------------------------------
+ifeq ($(OS),Windows_NT)
+  HOST_OS := windows
 else
-  DEFAULT_TARGET := generic
+  HOST_OS := $(if $(filter Linux,$(shell uname -s 2>/dev/null)),linux,other)
 endif
 
-# CachyOS CPU-family hint for GCC-specific builds.
-ifeq ($(HOST_CPU_VENDOR),AuthenticAMD)
-  ifeq ($(HOST_CPU_FAMILY),15)
-    CACHY_CPU_TARGET := linux-cachy-excavator
-  else ifeq ($(HOST_CPU_FAMILY),17)
-    CACHY_CPU_TARGET := linux-cachy-znver1
-  else ifeq ($(HOST_CPU_FAMILY),19)
-    CACHY_CPU_TARGET := linux-cachy-znver3
-  else ifeq ($(HOST_CPU_FAMILY),25)
-    CACHY_CPU_TARGET := linux-cachy-znver3
-  endif
-else ifeq ($(HOST_CPU_VENDOR),GenuineIntel)
-  ifneq (,$(filter 42 45,$(HOST_CPU_MODEL)))
-    CACHY_CPU_TARGET := linux-cachy-sandybridge
-  else ifneq (,$(filter 58 62,$(HOST_CPU_MODEL)))
-    CACHY_CPU_TARGET := linux-cachy-ivybridge
-  else ifeq ($(HOST_CPU_MODEL),60)
-    CACHY_CPU_TARGET := linux-cachy-haswell
-  else ifneq (,$(filter 61 71 79,$(HOST_CPU_MODEL)))
-    CACHY_CPU_TARGET := linux-cachy-broadwell
-  else ifneq (,$(filter 78 94 85 86,$(HOST_CPU_MODEL)))
-    CACHY_CPU_TARGET := linux-cachy-skylake
-  endif
-endif
+TARGET_OS ?= $(HOST_OS)
+# TOOLCHAIN: gcc | clang | mingw | msvc
+TOOLCHAIN ?= $(if $(filter windows,$(TARGET_OS)),mingw,gcc)
+TRIPLE    ?= x86_64-w64-mingw32
+IS_CROSS  := $(if $(and $(filter-out windows,$(HOST_OS)),$(filter windows,$(TARGET_OS))),1,)
 
-TARGET ?= $(DEFAULT_TARGET)
+# DEBUG=1: -O0 -g, no hardening.  LTO=1: link-time optimisation (gcc/clang).
+# MARCH: e.g. x86-64-v3 or native.  CONSOLE=1: keep a console window on Windows.
+# LAYER_SHELL: auto | 1 | 0  (Linux only: gtk4-layer-shell support).
+DEBUG   ?= 0
+LTO     ?= 0
+MARCH   ?=
+CONSOLE ?= 0
+LAYER_SHELL ?= auto
 
-RESET := \033[0m
-CYAN := \033[1;36m
-BLUE := \033[1;34m
-GREEN := \033[1;32m
-YELLOW := \033[1;33m
-RED := \033[1;31m
-MAGENTA := \033[1;35m
-DIM := \033[2m
-
-GTK_CFLAGS := $(shell $(PKG_CONFIG) --cflags gtk4 gtk4-layer-shell-0 gio-unix-2.0 2>/dev/null)
-GTK_LIBS := $(shell $(PKG_CONFIG) --libs gtk4 gtk4-layer-shell-0 2>/dev/null)
-
-# Target -> compiler/architecture mapping.
-# Cross-compilers must be installed separately; the Makefile never downloads them.
-TARGET_CC_linux-generic-x86_64 := gcc
-TARGET_CC_linux-generic-x86_64v2 := gcc
-TARGET_CC_linux-generic-x86_64v3 := gcc
-TARGET_CC_linux-generic-x86_64v4 := gcc
-TARGET_CC_linux-cachy := gcc
-TARGET_CC_linux-cachy-v3 := gcc
-TARGET_CC_linux-cachy-v4 := gcc
-TARGET_CC_linux-ubuntu-x86_64 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-ubuntu-x86_64v3 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-debian-x86_64 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-fedora-x86_64 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-arch-x86_64 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-alhp-v2 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-alhp-v3 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-alhp-v4 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-generic-aarch64 := aarch64-linux-gnu-gcc
-TARGET_CC_linux-ubuntu-aarch64 := aarch64-linux-gnu-gcc
-TARGET_CC_linux-debian-aarch64 := aarch64-linux-gnu-gcc
-TARGET_CC_linux-fedora-aarch64 := aarch64-linux-gnu-gcc
-TARGET_CC_linux-arch-aarch64 := aarch64-linux-gnu-gcc
-TARGET_CC_linux-generic-armv7 := arm-linux-gnueabihf-gcc
-TARGET_CC_linux-ubuntu-armv7 := arm-linux-gnueabihf-gcc
-TARGET_CC_linux-debian-armv7 := arm-linux-gnueabihf-gcc
-TARGET_CC_linux-arch-armv7 := arm-linux-gnueabihf-gcc
-TARGET_CC_linux-generic-armv6 := arm-linux-gnueabihf-gcc
-TARGET_CC_linux-debian-armv6 := arm-linux-gnueabihf-gcc
-TARGET_CC_linux-generic-armv5 := arm-linux-gnueabi-gcc
-TARGET_CC_linux-generic-armv4 := arm-linux-gnueabi-gcc
-TARGET_CC_linux-generic-i486 := i486-linux-gnu-gcc
-TARGET_CC_linux-generic-i586 := i586-linux-gnu-gcc
-TARGET_CC_linux-generic-i686 := i686-linux-gnu-gcc
-TARGET_CC_linux-generic-i386 := i386-linux-gnu-gcc
-TARGET_CC_linux-arch-i486 := i486-linux-gnu-gcc
-TARGET_CC_linux-arch-i686 := i686-linux-gnu-gcc
-TARGET_CC_linux-debian-i686 := i686-linux-gnu-gcc
-TARGET_CC_linux-generic-mips := mips-linux-gnu-gcc
-TARGET_CC_linux-generic-mipsel := mipsel-linux-gnu-gcc
-TARGET_CC_linux-generic-mips64 := mips64-linux-gnuabi64-gcc
-TARGET_CC_linux-generic-mips64el := mips64el-linux-gnuabi64-gcc
-TARGET_CC_linux-debian-mips := mips-linux-gnu-gcc
-TARGET_CC_linux-debian-mipsel := mipsel-linux-gnu-gcc
-TARGET_CC_linux-debian-mips64el := mips64el-linux-gnuabi64-gcc
-TARGET_CC_linux-generic-ppc := powerpc-linux-gnu-gcc
-TARGET_CC_linux-generic-ppc64 := powerpc64-linux-gnu-gcc
-TARGET_CC_linux-generic-ppc64el := powerpc64le-linux-gnu-gcc
-TARGET_CC_linux-generic-ppc64el-power8 := powerpc64le-linux-gnu-gcc
-TARGET_CC_linux-generic-ppc64el-power9 := powerpc64le-linux-gnu-gcc
-TARGET_CC_linux-debian-ppc := powerpc-linux-gnu-gcc
-TARGET_CC_linux-debian-ppc64 := powerpc64-linux-gnu-gcc
-TARGET_CC_linux-debian-ppc64el := powerpc64le-linux-gnu-gcc
-TARGET_CC_linux-generic-sh := sh-linux-gnu-gcc
-TARGET_CC_linux-generic-sh2 := sh-linux-gnu-gcc
-TARGET_CC_linux-generic-sh3 := sh-linux-gnu-gcc
-TARGET_CC_linux-generic-sh4 := sh-linux-gnu-gcc
-TARGET_CC_linux-generic-sh5 := sh-linux-gnu-gcc
-TARGET_CC_linux-generic-x32 := x86_64-linux-gnu-gcc
-TARGET_CC_linux-generic-s390 := s390x-linux-gnu-gcc
-TARGET_CC_linux-generic-s390x := s390x-linux-gnu-gcc
-TARGET_CC_linux-ubuntu-s390x := s390x-linux-gnu-gcc
-TARGET_CC_linux-debian-s390x := s390x-linux-gnu-gcc
-TARGET_CC_linux-fedora-s390x := s390x-linux-gnu-gcc
-TARGET_CC_linux-generic-i686-pentium4 := i686-linux-gnu-gcc
-TARGET_CC_linux-generic-m32r := m32r-linux-gnu-gcc
-TARGET_CC_linux-generic-m68k := m68k-linux-gnu-gcc
-TARGET_CC_linux-generic-alpha := alpha-linux-gnu-gcc
-TARGET_CC_linux-generic-or1k := or1k-linux-gnu-gcc
-TARGET_CC_linux-generic-ia64 := ia64-linux-gnu-gcc
-TARGET_CC_linux-generic-mn10300 := mn10300-linux-gnu-gcc
-TARGET_CC_linux-generic-ppc-ps3 := powerpc64-linux-gnu-gcc
-TARGET_CC_linux-generic-loong32 := loongarch32-linux-gnu-gcc
-TARGET_CC_linux-generic-loong64 := loongarch64-linux-gnu-gcc
-TARGET_CC_linux-debian-loong64 := loongarch64-linux-gnu-gcc
-TARGET_CC_linux-arch-loong64 := loongarch64-linux-gnu-gcc
-TARGET_CC_linux-generic-riscv32 := riscv32-linux-gnu-gcc
-TARGET_CC_linux-generic-riscv64 := riscv64-linux-gnu-gcc
-TARGET_CC_linux-ubuntu-riscv64 := riscv64-linux-gnu-gcc
-TARGET_CC_linux-debian-riscv64 := riscv64-linux-gnu-gcc
-TARGET_CC_linux-fedora-riscv64 := riscv64-linux-gnu-gcc
-TARGET_CC_linux-arch-riscv64 := riscv64-linux-gnu-gcc
-TARGET_CC_linux-generic-hppa-1.0 := hppa-linux-gnu-gcc
-TARGET_CC_linux-generic-hppa-1.1 := hppa-linux-gnu-gcc
-
-TARGET_CC_win7-x86_64 := x86_64-w64-mingw32-gcc
-TARGET_CC_win8-x86_64 := x86_64-w64-mingw32-gcc
-TARGET_CC_win8.1-x86_64 := x86_64-w64-mingw32-gcc
-TARGET_CC_win10-x86_64 := x86_64-w64-mingw32-gcc
-TARGET_CC_win11-x86_64 := x86_64-w64-mingw32-gcc
-TARGET_CC_win7-i686 := i686-w64-mingw32-gcc
-TARGET_CC_win8-i686 := i686-w64-mingw32-gcc
-TARGET_CC_win8.1-i686 := i686-w64-mingw32-gcc
-TARGET_CC_win10-i686 := i686-w64-mingw32-gcc
-TARGET_CC_win8-aarch64 := aarch64-w64-mingw32-gcc
-TARGET_CC_win8.1-aarch64 := aarch64-w64-mingw32-gcc
-TARGET_CC_win10-aarch64 := aarch64-w64-mingw32-gcc
-TARGET_CC_win11-aarch64 := aarch64-w64-mingw32-gcc
-TARGET_CC_win8-armv7 := arm-w64-mingw32-gcc
-TARGET_CC_win8.1-armv7 := arm-w64-mingw32-gcc
-TARGET_CC_win10-armv7 := arm-w64-mingw32-gcc
-
-TARGET_CC_darwin-x86_64 := x86_64-apple-darwin-clang
-TARGET_CC_darwin-i686 := i686-apple-darwin-clang
-TARGET_CC_darwin-aarch64 := aarch64-apple-darwin-clang
-TARGET_CC_darwin-ppc64 := powerpc64-apple-darwin-gcc
-TARGET_CC_darwin-ppc := powerpc-apple-darwin-gcc
-
-TARGET_CC_freebsd-x86_64 := x86_64-unknown-freebsd-gcc
-TARGET_CC_freebsd-aarch64 := aarch64-unknown-freebsd-gcc
-TARGET_CC_freebsd-i686 := i686-unknown-freebsd-gcc
-
-# Generic targets are bare-metal ELF targets, not host Linux targets.
-TARGET_CC_generic := x86_64-elf-gcc
-TARGET_CC_generic-x86_64 := x86_64-elf-gcc
-TARGET_CC_generic-aarch64 := aarch64-none-elf-gcc
-TARGET_CC_generic-armv7 := arm-none-eabi-gcc
-TARGET_CC_generic-armv6 := arm-none-eabi-gcc
-TARGET_CC_generic-i686 := i686-elf-gcc
-TARGET_CC_generic-mips := mips-elf-gcc
-TARGET_CC_generic-mipsel := mipsel-elf-gcc
-TARGET_CC_generic-mips64 := mips64-elf-gcc
-TARGET_CC_generic-mips64el := mips64el-elf-gcc
-TARGET_CC_generic-ppc := powerpc-eabi-gcc
-TARGET_CC_generic-ppc64 := powerpc64-elf-gcc
-TARGET_CC_generic-ppc64el := powerpc64le-elf-gcc
-TARGET_CC_generic-s390x := s390x-elf-gcc
-TARGET_CC_generic-riscv32 := riscv32-unknown-elf-gcc
-TARGET_CC_generic-riscv64 := riscv64-unknown-elf-gcc
-TARGET_CC_generic-loong64 := loongarch64-unknown-elf-gcc
-
-# x86 tuning. These are compiler options, not claims about distro packaging.
-TARGET_CFLAGS_linux-generic-x86_64 := -march=x86-64
-TARGET_CFLAGS_linux-generic-x86_64v2 := -march=x86-64-v2
-TARGET_CFLAGS_linux-generic-x86_64v3 := -march=x86-64-v3
-TARGET_CFLAGS_linux-generic-x86_64v4 := -march=x86-64-v4
-TARGET_CFLAGS_linux-cachy := -march=x86-64
-TARGET_CFLAGS_linux-cachy-v3 := -march=x86-64-v3
-TARGET_CFLAGS_linux-cachy-v4 := -march=x86-64-v4
-TARGET_CC_linux-cachy-excavator := gcc
-TARGET_CFLAGS_linux-cachy-excavator := -march=bdver4
-TARGET_CFLAGS_linux-alhp-v2 := -march=x86-64-v2
-TARGET_CFLAGS_linux-arch-x86_64 := -march=x86-64
-TARGET_CFLAGS_linux-alhp-v3 := -march=x86-64-v3
-TARGET_CFLAGS_linux-alhp-v4 := -march=x86-64-v4
-TARGET_CFLAGS_linux-generic-i686-pentium4 := -march=pentium4
-TARGET_CFLAGS_linux-generic-x32 := -mx32
-TARGET_CFLAGS_linux-generic-i486 := -march=i486
-TARGET_CFLAGS_linux-generic-i586 := -march=i586
-TARGET_CFLAGS_linux-generic-i686 := -march=i686
-TARGET_CFLAGS_linux-arch-i486 := -march=i486
-TARGET_CFLAGS_linux-arch-i686 := -march=i686
-
-# Known CPU-name aliases. GCC/Clang decides whether a CPU name is valid.
-X86_CPU_CODENAMES := bonnell silvermont goldmont goldmont-plus tremont gracemont sandybridge ivybridge haswell broadwell skylake skylake-avx512 cannonlake icelake-client tigerlake alderlake raptorlake meteorlake arrowlake sierraforest grandridge granite-rapids emeraldrapids diamond-rapids clearwaterforest znver1 znver2 znver3 znver4 znver5 znver6
-
-define cpu_target_rules
-TARGET_CC_linux-generic-x86_64-$(1) := gcc
-TARGET_CFLAGS_linux-generic-x86_64-$(1) := -march=$(1)
-endef
-$(foreach cpu,$(X86_CPU_CODENAMES),$(eval $(call cpu_target_rules,$(cpu))))
-
-define cachy_cpu_target_rules
-TARGET_CC_linux-cachy-$(1) := gcc
-TARGET_CFLAGS_linux-cachy-$(1) := -march=$(1)
-endef
-$(foreach cpu,$(X86_CPU_CODENAMES),$(eval $(call cachy_cpu_target_rules,$(cpu))))
-
-LINUX_TARGETS := \
-linux-generic-x86_64 linux-generic-x86_64v2 linux-generic-x86_64v3 linux-generic-x86_64v4 \
-linux-cachy linux-cachy-v3 linux-cachy-v4 linux-ubuntu-x86_64 linux-ubuntu-x86_64v3 linux-debian-x86_64 linux-fedora-x86_64 linux-arch-x86_64 \
-linux-alhp-v2 linux-alhp-v3 linux-alhp-v4 linux-generic-aarch64 linux-ubuntu-aarch64 linux-debian-aarch64 linux-fedora-aarch64 linux-arch-aarch64 \
-linux-generic-armv7 linux-ubuntu-armv7 linux-debian-armv7 linux-arch-armv7 linux-generic-armv6 linux-debian-armv6 linux-generic-armv5 linux-generic-armv4 \
-linux-generic-i486 linux-generic-i586 linux-generic-i686 linux-generic-i386 linux-arch-i486 linux-arch-i686 linux-debian-i686 \
-linux-generic-mips linux-generic-mipsel linux-generic-mips64 linux-generic-mips64el linux-debian-mips linux-debian-mipsel linux-debian-mips64el \
-linux-generic-ppc linux-generic-ppc64 linux-generic-ppc64el linux-generic-ppc64el-power8 linux-generic-ppc64el-power9 linux-debian-ppc linux-debian-ppc64 linux-debian-ppc64el \
-linux-generic-sh linux-generic-sh2 linux-generic-sh3 linux-generic-sh4 linux-generic-sh5 linux-generic-x32 linux-generic-s390 linux-generic-s390x \
-linux-ubuntu-s390x linux-debian-s390x linux-fedora-s390x linux-generic-i686-pentium4 linux-generic-m32r linux-generic-m68k linux-generic-alpha linux-generic-or1k linux-generic-ia64 linux-generic-mn10300 \
-linux-generic-ppc-ps3 linux-generic-loong32 linux-generic-loong64 linux-debian-loong64 linux-arch-loong64 linux-generic-riscv32 linux-generic-riscv64 \
-linux-ubuntu-riscv64 linux-debian-riscv64 linux-fedora-riscv64 linux-arch-riscv64 linux-generic-hppa-1.0 linux-generic-hppa-1.1 $(LINUX_CPU_TARGETS)
-WINDOWS_TARGETS := win7-x86_64 win8-x86_64 win8.1-x86_64 win10-x86_64 win11-x86_64 win7-i686 win8-i686 win8.1-i686 win10-i686 win8-aarch64 win8.1-aarch64 win10-aarch64 win11-aarch64 win8-armv7 win8.1-armv7 win10-armv7
-DARWIN_TARGETS := darwin-x86_64 darwin-i686 darwin-aarch64 darwin-ppc64 darwin-ppc
-FREEBSD_TARGETS := freebsd-x86_64 freebsd-aarch64 freebsd-i686
-GENERIC_TARGETS := generic generic-x86_64 generic-aarch64 generic-armv7 generic-armv6 generic-i686 generic-mips generic-mipsel generic-mips64 generic-mips64el generic-ppc generic-ppc64 generic-ppc64el generic-s390x generic-riscv32 generic-riscv64 generic-loong64
-NETBSD_TARGETS := netbsd-x86_64 netbsd-aarch64 netbsd-i686
-OPENBSD_TARGETS := openbsd-x86_64 openbsd-aarch64 openbsd-i686
-DRAGONFLY_TARGETS := dragonfly-x86_64
-
-TARGETS := $(LINUX_TARGETS) $(WINDOWS_TARGETS) $(DARWIN_TARGETS) $(FREEBSD_TARGETS) $(NETBSD_TARGETS) $(OPENBSD_TARGETS) $(DRAGONFLY_TARGETS) $(GENERIC_TARGETS)
-
-# Default build uses the selected target.
-CC_SELECTED := $(or $(TARGET_CC_$(TARGET)),$(CC))
-TARGET_CFLAGS := $(TARGET_CFLAGS_$(TARGET))
-
-# Distribution/toolchain-specific hardening and optimization profiles.
-# The selected TARGET_CFLAGS value supplies the target-specific -march.
-CACHY_CFLAGS := $(TARGET_CFLAGS) -O3 -pipe -fno-plt -fexceptions \
--Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
--fstack-clash-protection -fcf-protection
-CACHY_CXXFLAGS := $(CACHY_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
-
-ARCH_CFLAGS := $(TARGET_CFLAGS) -mtune=generic -O2 -pipe -fno-plt -fexceptions \
--Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
--fstack-clash-protection -fcf-protection \
--fno-omit-frame-pointer -mno-omit-leaf-frame-pointer
-ARCH_CXXFLAGS := $(ARCH_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
-
-ALHP_CFLAGS := $(TARGET_CFLAGS) -O3 -pipe -fno-plt -fexceptions \
--Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
--fstack-clash-protection -fcf-protection \
--fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -mpclmul
-ALHP_CXXFLAGS := $(ALHP_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
-
-BASE_CFLAGS := -Wall -Wextra -pipe -fno-plt -fexceptions \
--Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \
--fstack-clash-protection -DVERSION=\"$(VERSION)\"
-# x86-only control-flow protection. Keep architecture-specific options out of
-# non-x86 cross builds (AArch64, ARM, RISC-V, etc.).
-TARGET_X86_SECURITY_CFLAGS := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32,$(TARGET)),-fcf-protection)
-
-# Some build environments export CFLAGS globally. Never let x86-only SIMD/FPU
-# options leak into non-x86 targets: GCC only defines these options for x86.
-# Keep the filtering target-aware so explicit x86 builds retain their flags.
-USER_CFLAGS := $(CFLAGS)
-X86_ONLY_CFLAGS := -mfpmath=sse -mfpmath=sse2 -msse -msse2
-TARGET_IS_X86 := $(if $(filter linux-generic-x86_64% linux-cachy% linux-alhp-v% linux-generic-i% linux-generic-x32 win%-x86_64 win%-i686 darwin-x86_64 darwin-i686 freebsd-x86_64 freebsd-i686 netbsd-x86_64 netbsd-i686 openbsd-x86_64 openbsd-i686 dragonfly-x86_64 generic-x86_64 generic-i686,$(TARGET)),yes,no)
-FILTERED_USER_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(USER_CFLAGS),$(filter-out $(X86_ONLY_CFLAGS),$(USER_CFLAGS)))
-TARGET_PROFILE_CFLAGS := $(BASE_CFLAGS) $(TARGET_X86_SECURITY_CFLAGS) $(TARGET_CFLAGS)
-TARGET_PROFILE_CXXFLAGS := $(TARGET_PROFILE_CFLAGS) -Wp,-D_GLIBCXX_ASSERTIONS
-TARGET_PROFILE_LTOFLAGS := -flto=auto
-
-# linux-cachy-* profile.
-ifneq (,$(filter linux-cachy%,$(TARGET)))
-  TARGET_PROFILE_CFLAGS := $(CACHY_CFLAGS)
-  TARGET_PROFILE_CXXFLAGS := $(CACHY_CXXFLAGS)
-endif
-
-# linux-arch-* x86 profile. Non-x86 Arch targets keep the generic profile.
-ifneq (,$(filter linux-arch-x86_64 linux-arch-x86_64v% linux-arch-i%,$(TARGET)))
-  TARGET_PROFILE_CFLAGS := $(ARCH_CFLAGS)
-  TARGET_PROFILE_CXXFLAGS := $(ARCH_CXXFLAGS)
-endif
-
-# ALHP x86_64-v2/v3/v4 profiles.
-ifneq (,$(filter linux-alhp-v%,$(TARGET)))
-  TARGET_PROFILE_CFLAGS := $(ALHP_CFLAGS)
-  TARGET_PROFILE_CXXFLAGS := $(ALHP_CXXFLAGS)
-  TARGET_PROFILE_LTOFLAGS := -flto=auto -falign-functions=32
-endif
-
-TARGET_BASE_CFLAGS := $(TARGET_PROFILE_CFLAGS) $(FILTERED_USER_CFLAGS) $(GTK_CFLAGS) -Isrc
-override CFLAGS := $(TARGET_BASE_CFLAGS)
-override CXXFLAGS := $(TARGET_PROFILE_CXXFLAGS) $(FILTERED_USER_CFLAGS)
-override LDFLAGS := -Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \
--Wl,-z,pack-relative-relocs $(GTK_LIBS) -lm
-override LTOFLAGS := $(TARGET_PROFILE_LTOFLAGS)
-
-# Never pass x86 SSE/FPU switches to non-x86 compilers, even when they arrive
-# through a recursive make invocation or an inherited build environment.
-NON_X86_CFLAGS := $(filter-out -mfpmath=sse -mfpmath=sse2 -msse -msse2,$(TARGET_BASE_CFLAGS))
-EFFECTIVE_CFLAGS := $(if $(filter yes,$(TARGET_IS_X86)),$(TARGET_BASE_CFLAGS),$(NON_X86_CFLAGS))
-
-CORE_SRC := src/main.c src/desktop.c src/panel.c src/sidebar.c src/start_menu.c src/settings.c src/appstore.c src/explorer.c
-CORE_OBJDIR := build/core
-CORE_OBJ := $(patsubst src/%.c,$(CORE_OBJDIR)/%.o,$(CORE_SRC))
-WM_DIR := $(CURDIR)/src/LH4051-WM
-FM_DIR := $(CURDIR)/src/LH4051-FM
-SESSION_DIR := $(CURDIR)/src/LH4051-SESSION
-WM_OBJ := $(WM_DIR)/build/wm.o
-FM_OBJ := $(FM_DIR)/build/fm.o
-SESSION_OBJ := $(SESSION_DIR)/build/session.o
-SUBPROJECT_OBJS := $(WM_OBJ) $(FM_OBJ) $(SESSION_OBJ)
-TARGET_BIN := build/lh4051-de
-
-.PHONY: all build install clean run dist dist-stable help show-target cpu-build subprojects wm fm session sessions data wallpaper $(TARGETS)
-
-all: $(TARGET_BIN)
-
-build: all
-
-sessions: session data
-
-DATA_SRC_WAYLAND := data/wayland-sessions/lh4051-de.desktop.in
-DATA_SRC_X11 := data/xsessions/lh4051-de.desktop.in
-DATA_BUILD_DIR := build/data
-DATA_WAYLAND := $(DATA_BUILD_DIR)/wayland-sessions/lh4051-de.desktop
-DATA_X11 := $(DATA_BUILD_DIR)/xsessions/lh4051-de.desktop
-
-data: $(DATA_WAYLAND) $(DATA_X11)
-
-$(DATA_WAYLAND): $(DATA_SRC_WAYLAND)
-	@mkdir -p $(@D)
-	@printf "$(DIM)DATA %s\n" "$@"
-	@sed -e 's|@bindir@|/usr/bin|g' -e 's|0.0.0|$(VERSION)|g' "$<" > "$@"
-
-$(DATA_X11): $(DATA_SRC_X11)
-	@mkdir -p $(@D)
-	@printf "$(DIM)DATA %s\n" "$@"
-	@sed -e 's|@bindir@|/usr/bin|g' -e 's|0.0.0|$(VERSION)|g' "$<" > "$@"
-
-
-cpu-build:
-	@if [ -z "$(CPU)" ]; then \
-		printf "$(RED)Usage: make cpu-build CPU=<cpu-codename>$(RESET)\n"; \
-		printf "Example: make cpu-build CPU=skylake\n"; \
-		exit 2; \
-	fi
-	@if ! printf "%s\n" "$(X86_CPU_CODENAMES)" | tr " " "\n" | grep -Fxq "$(CPU)"; then \
-		printf "$(RED)Unknown CPU target: %s$(RESET)\n" "$(CPU)"; \
-		printf "Supported CPU targets: %s\n" "$(X86_CPU_CODENAMES)"; \
-		exit 2; \
-	fi
-	@$(MAKE) --no-print-directory TARGET="linux-cachy-$(CPU)" all
-
-show-target:
-	@printf "$(CYAN)LH4051-DE target:$(RESET) $(GREEN)%s$(RESET)\n" "$(TARGET)"
-	@printf "  compiler: %s\n" "$(CC_SELECTED)"
-	@printf "  cflags:   %s\n" "$(TARGET_CFLAGS)"
-
-$(TARGETS):
-	@$(MAKE) --no-print-directory TARGET="$@" all
-
-$(TARGET_BIN): $(CORE_OBJ) $(SUBPROJECT_OBJS)
-	@mkdir -p $(@D)
-	@printf "$(GREEN)==> Linking LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
-	@$(CC_SELECTED) $(CORE_OBJ) $(SUBPROJECT_OBJS) -o $@ $(LDFLAGS)
-
-$(CORE_OBJDIR)/%.o: src/%.c
-	@mkdir -p $(@D)
-	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c $< -o $@
-
-$(WM_OBJ): src/LH4051-WM/wm.c src/LH4051-WM/wm.h
-	@mkdir -p $(@D)
-	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c src/LH4051-WM/wm.c -o $@
-
-$(FM_OBJ): src/LH4051-FM/fm.c src/LH4051-FM/fm.h
-	@mkdir -p $(@D)
-	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c src/LH4051-FM/fm.c -o $@
-
-$(SESSION_OBJ): src/LH4051-SESSION/session.c src/LH4051-SESSION/session.h
-	@mkdir -p $(@D)
-	@printf "$(DIM)CC  %s [%s]\n" "$<" "$(TARGET)"
-	@$(CC_SELECTED) $(EFFECTIVE_CFLAGS) -c src/LH4051-SESSION/session.c -o $@
-
-subprojects: $(SUBPROJECT_OBJS)
-wm: $(WM_OBJ)
-fm: $(FM_OBJ)
-session: $(SESSION_OBJ)
-
-clean:
-	@printf "$(YELLOW)==> Cleaning build artifacts$(RESET)\n"
-	@rm -rf build
-	@$(MAKE) --no-print-directory -C "$(WM_DIR)" clean
-	@$(MAKE) --no-print-directory -C "$(FM_DIR)" clean
-	@$(MAKE) --no-print-directory -C "$(SESSION_DIR)" clean
-
-
-run: all
-	@printf "$(GREEN)==> Running LH4051-DE $(VERSION) [$(TARGET)]$(RESET)\n"
-	@./$(TARGET_BIN)
-
-PREFIX ?= /usr
+PREFIX  ?= /usr/local
 DESTDIR ?=
 
-install: all sessions data
-	@printf "$(GREEN)==> Installing LH4051-DE $(VERSION) to $(DESTDIR)$(PREFIX)$(RESET)\n"
-	@install -Dm755 "$(TARGET_BIN)" "$(DESTDIR)$(PREFIX)/bin/lh4051-de"
-	@install -Dm644 "$(DATA_WAYLAND)" "$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop"
-	@install -Dm644 "$(DATA_X11)" "$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop"
+ifeq ($(TARGET_OS),windows)
+  EXE := .exe
+else
+  EXE :=
+endif
+ifeq ($(TOOLCHAIN),msvc)
+  OBJEXT := .obj
+else
+  OBJEXT := .o
+endif
 
-dist:
-	@printf "$(GREEN)==> Running full build before packaging$(RESET)\n"
-	@$(MAKE) --no-print-directory TARGET="$(TARGET)" all sessions data
-	@if ! command -v makepkg >/dev/null 2>&1 || ! command -v pacman >/dev/null 2>&1; then \
-		printf "$(RED)make dist is only supported on pacman/makepkg systems$(RESET)\n"; \
-		exit 2; \
-	fi
-	@printf "$(CYAN)==> Generating git PKGBUILD [arch=$(HOST_ARCH)]$(RESET)\n"; \
-	sed -e "s/@PKGVER@/0.0.0.r0.git/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
-	printf "$(GREEN)==> Building Arch package with makepkg$(RESET)\n"; \
-	makepkg -f
+BUILD ?= build/$(TARGET_OS)-$(TOOLCHAIN)
+BIN   := $(BUILD)/$(NAME)$(EXE)
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+ifneq (,$(filter default undefined,$(origin CC)))
+  ifeq ($(TOOLCHAIN),msvc)
+    CC := cl
+  else ifeq ($(IS_CROSS),1)
+    CC := $(TRIPLE)-gcc
+  else ifeq ($(TOOLCHAIN),clang)
+    CC := clang
+  else
+    CC := gcc
+  endif
+endif
+
+ifeq ($(IS_CROSS),1)
+  WINDRES ?= $(TRIPLE)-windres
+else
+  WINDRES ?= windres
+endif
+
+PKG_CONFIG ?= pkg-config
+GLIB_COMPILE_RESOURCES ?= glib-compile-resources
+
+# Cross-compiling for Windows from Linux: prefer <triple>-pkg-config (Fedora/MXE),
+# otherwise point pkg-config at the MinGW sysroot (Arch/Debian/Ubuntu layouts).
+ifeq ($(IS_CROSS),1)
+  CROSS_PC := $(shell command -v $(TRIPLE)-pkg-config 2>/dev/null)
+  ifneq ($(CROSS_PC),)
+    PKG_CONFIG := $(CROSS_PC)
+  else
+    MINGW_PREFIX ?= /usr/$(TRIPLE)
+    export PKG_CONFIG_LIBDIR := $(MINGW_PREFIX)/lib/pkgconfig:$(MINGW_PREFIX)/share/pkgconfig
+  endif
+endif
+
+# Prebuilt GTK4 tree (e.g. gvsbuild output for MSVC).
+ifdef GTK_PREFIX
+  export PKG_CONFIG_PATH := $(GTK_PREFIX)/lib/pkgconfig
+endif
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+PKGS := gtk4
+DEFS :=
+
+ifeq ($(TARGET_OS),linux)
+  ifneq ($(LAYER_SHELL),0)
+    HAVE_LAYER_SHELL := $(shell $(PKG_CONFIG) --exists gtk4-layer-shell-0 2>/dev/null && echo 1)
+    ifeq ($(HAVE_LAYER_SHELL),1)
+      PKGS += gtk4-layer-shell-0
+      DEFS += -DLH_HAVE_LAYER_SHELL
+    else ifeq ($(LAYER_SHELL),1)
+      $(error LAYER_SHELL=1 but gtk4-layer-shell-0 was not found by pkg-config)
+    endif
+  endif
+endif
+
+PC_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKGS) 2>/dev/null)
+ifeq ($(TOOLCHAIN),msvc)
+  # cl/link do not understand -L/-l; translate pkg-config's GNU-style output.
+  PC_LIBS := $(shell $(PKG_CONFIG) --libs $(PKGS) 2>/dev/null | sed -e 's/\(^\| \)-L/\1-LIBPATH:/g' -e 's/\(^\| \)-l\([^ ]*\)/\1\2.lib/g')
+else
+  PC_LIBS := $(shell $(PKG_CONFIG) --libs $(PKGS) 2>/dev/null) -lm
+endif
+
+# ---------------------------------------------------------------------------
+# Flags
+# ---------------------------------------------------------------------------
+ifeq ($(TOOLCHAIN),msvc)
+  CFLAGS_ALL := -nologo -TC -std:c11 -utf-8 -W3 -MD -D_CRT_SECURE_NO_WARNINGS -DWIN32_LEAN_AND_MEAN \
+                $(if $(filter 1,$(DEBUG)),-Od -Zi,-O2) $(DEFS) -Isrc $(PC_CFLAGS) $(CFLAGS)
+  PC_LIBS += shell32.lib
+  LDFLAGS_ALL := -nologo $(if $(filter 1,$(DEBUG)),-DEBUG,) \
+                 $(if $(filter 1,$(CONSOLE)),-SUBSYSTEM:CONSOLE,-SUBSYSTEM:WINDOWS -ENTRY:mainCRTStartup) $(LDFLAGS)
+else
+  CFLAGS_ALL := -std=gnu11 -Wall -Wextra -Wformat=2 -Werror=format-security -pipe -fno-strict-aliasing -MMD -MP \
+                $(if $(filter 1,$(DEBUG)),-O0 -g,-O2) $(if $(MARCH),-march=$(MARCH),) $(if $(filter 1,$(LTO)),-flto,) \
+                $(DEFS) -Isrc $(PC_CFLAGS)
+  LDFLAGS_ALL := $(if $(filter 1,$(LTO)),-flto,) -Wl,--as-needed
+  ifeq ($(TARGET_OS),linux)
+    ifeq ($(DEBUG),0)
+      CFLAGS_ALL  += -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE
+      LDFLAGS_ALL += -pie -Wl,-z,relro,-z,now
+    endif
+  endif
+  ifeq ($(TARGET_OS),windows)
+    LDFLAGS_ALL += -static-libgcc $(if $(filter 1,$(CONSOLE)),,-mwindows)
+    PC_LIBS += -lshell32
+  endif
+  CFLAGS_ALL  += $(CFLAGS)
+  LDFLAGS_ALL += $(LDFLAGS)
+endif
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+SRC := src/main.c src/platform.c src/prefs.c src/theme.c src/desktop.c src/panel.c src/sidebar.c \
+       src/start_menu.c src/settings.c src/explorer.c src/appstore.c \
+       src/LH4051-WM/wm.c src/LH4051-FM/fm.c src/LH4051-SESSION/session.c
+OBJS    := $(patsubst %.c,$(BUILD)/%$(OBJEXT),$(SRC))
+RES_C   := $(BUILD)/resources.c
+RES_OBJ := $(BUILD)/resources$(OBJEXT)
+ALL_OBJS := $(OBJS) $(RES_OBJ)
+
+ifeq ($(TARGET_OS),windows)
+  ifeq ($(TOOLCHAIN),msvc)
+    WIN_RES := $(BUILD)/lh4051-de.res
+  else
+    WIN_RES := $(BUILD)/lh4051-de.res.o
+  endif
+  ALL_OBJS += $(WIN_RES)
+endif
+
+comma := ,
+
+# ---------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------
+.PHONY: all linux win64 msvc run clean distclean check-deps show-config help \
+        install uninstall sessions dist-linux dist-win64 dist-arch dist-stable dist
+
+all: $(BIN)
+
+linux:
+	@$(MAKE) --no-print-directory TARGET_OS=linux TOOLCHAIN=gcc all
+
+win64:
+	@$(MAKE) --no-print-directory TARGET_OS=windows TOOLCHAIN=mingw all
+
+msvc:
+	@$(MAKE) --no-print-directory TARGET_OS=windows TOOLCHAIN=msvc all
+
+check-deps:
+	@$(PKG_CONFIG) --exists gtk4 || { \
+	  echo "error: GTK4 development files were not found by '$(PKG_CONFIG)'."; \
+	  echo "  Debian/Ubuntu: sudo apt install libgtk-4-dev libglib2.0-dev-bin [libgtk4-layer-shell-dev]"; \
+	  echo "  Fedora:        sudo dnf install gtk4-devel gtk4-layer-shell-devel"; \
+	  echo "  Arch:          sudo pacman -S gtk4 gtk4-layer-shell"; \
+	  echo "  MSYS2 MINGW64: pacman -S mingw-w64-x86_64-gtk4 mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkgconf"; \
+	  echo "  MSVC:          set GTK_PREFIX to a gvsbuild GTK4 tree"; \
+	  exit 1; }
+	@command -v $(GLIB_COMPILE_RESOURCES) >/dev/null 2>&1 || { echo "error: $(GLIB_COMPILE_RESOURCES) not found (package libglib2.0-dev-bin / glib2-devel)."; exit 1; }
+	@command -v $(firstword $(CC)) >/dev/null 2>&1 || { echo "error: compiler '$(firstword $(CC))' not found."; exit 1; }
+ifeq ($(TOOLCHAIN),msvc)
+	@link -? 2>&1 | grep -qi microsoft || { echo "error: MSVC link.exe not first in PATH (MSYS2's coreutils 'link' shadows it). Use a VS developer prompt."; exit 1; }
+endif
+
+$(BIN): $(ALL_OBJS)
+	@mkdir -p $(@D)
+	@printf '==> Linking %s %s [%s/%s]\n' "$(NAME)" "$(VERSION)" "$(TARGET_OS)" "$(TOOLCHAIN)"
+ifeq ($(TOOLCHAIN),msvc)
+	@link $(LDFLAGS_ALL) -OUT:$@ $(ALL_OBJS) $(PC_LIBS)
+else
+	@$(CC) $(ALL_OBJS) -o $@ $(LDFLAGS_ALL) $(PC_LIBS)
+endif
+
+$(BUILD)/%$(OBJEXT): %.c | check-deps
+	@mkdir -p $(@D)
+	@printf 'CC  %s\n' "$<"
+ifeq ($(TOOLCHAIN),msvc)
+	@$(CC) $(CFLAGS_ALL) -c $< -Fo$@
+else
+	@$(CC) $(CFLAGS_ALL) -c $< -o $@
+endif
+
+$(RES_C): data/lh4051-de.gresource.xml data/theme.css images/wallpaper.jpg | check-deps
+	@mkdir -p $(@D)
+	@printf 'RES %s\n' "$@"
+	@$(GLIB_COMPILE_RESOURCES) --sourcedir=data --target=$@ --generate-source $<
+
+$(RES_OBJ): $(RES_C)
+ifeq ($(TOOLCHAIN),msvc)
+	@$(CC) $(CFLAGS_ALL) -c $< -Fo$@
+else
+	@$(CC) $(CFLAGS_ALL) -c $< -o $@
+endif
+
+$(BUILD)/version.h: src/longhorn.h
+	@mkdir -p $(@D)
+	@printf '#define LH_RC_VERSION %s,0\n#define LH_RC_VERSION_STR "%s"\n' "$(subst .,$(comma),$(VERSION))" "$(VERSION)" > $@
+
+ifeq ($(TARGET_OS),windows)
+ifeq ($(TOOLCHAIN),msvc)
+$(WIN_RES): windows/lh4051-de.rc windows/lh4051-de.manifest $(BUILD)/version.h
+	@printf 'RC  %s\n' "$<"
+	@rc -nologo -I$(BUILD) -Iwindows -Fo$@ $<
+else
+$(WIN_RES): windows/lh4051-de.rc windows/lh4051-de.manifest $(BUILD)/version.h
+	@printf 'RC  %s\n' "$<"
+	@$(WINDRES) -O coff -I$(BUILD) -Iwindows -i $< -o $@
+endif
+endif
+
+ifneq ($(TOOLCHAIN),msvc)
+-include $(OBJS:$(OBJEXT)=.d)
+endif
+
+run: all
+	@./$(BIN) $(ARGS)
+
+clean:
+	@rm -rf build dist
+
+distclean: clean
+	@rm -f PKGBUILD
+
+show-config:
+	@echo "version:    $(VERSION)"
+	@echo "host/target: $(HOST_OS) -> $(TARGET_OS) ($(TOOLCHAIN)$(if $(IS_CROSS), cross,))"
+	@echo "compiler:   $(CC)"
+	@echo "pkg-config: $(PKG_CONFIG)  packages: $(PKGS)"
+	@echo "layer-shell: $(if $(findstring LH_HAVE_LAYER_SHELL,$(DEFS)),yes,no)"
+	@echo "output:     $(BIN)"
+	@echo "cflags:     $(CFLAGS_ALL)"
+	@echo "ldflags:    $(LDFLAGS_ALL) $(PC_LIBS)"
+
+# ---------------------------------------------------------------------------
+# Install (Linux) + session files
+# ---------------------------------------------------------------------------
+SESSION_DIR := $(BUILD)/data
+sessions: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(SESSION_DIR)/xsessions/lh4051-de.desktop
+
+$(SESSION_DIR)/%/lh4051-de.desktop: data/%/lh4051-de.desktop.in
+	@mkdir -p $(@D)
+	@sed -e 's|@bindir@|$(PREFIX)/bin|g' -e 's|@version@|$(VERSION)|g' $< > $@
+
+install: all sessions
+ifneq ($(TARGET_OS),linux)
+	@echo "error: 'make install' is Linux only. For Windows use 'make dist-win64'."; exit 1
+else
+	install -Dm755 $(BIN) $(DESTDIR)$(PREFIX)/bin/$(NAME)
+	install -Dm755 scripts/lh4051-de-session $(DESTDIR)$(PREFIX)/bin/lh4051-de-session
+	install -Dm644 $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop
+	install -Dm644 $(SESSION_DIR)/xsessions/lh4051-de.desktop $(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop
+endif
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/lh4051-de-session \
+	  $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop $(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop
+
+# ---------------------------------------------------------------------------
+# Distribution artifacts
+# ---------------------------------------------------------------------------
+dist-linux:
+	@rm -rf dist/stage-linux && mkdir -p dist
+	@$(MAKE) --no-print-directory TARGET_OS=linux TOOLCHAIN=gcc PREFIX=/usr DESTDIR=$(CURDIR)/dist/stage-linux install
+	@tar -C dist/stage-linux -czf dist/$(NAME)-$(VERSION)-linux-$(shell uname -m).tar.gz .
+	@echo "==> dist/$(NAME)-$(VERSION)-linux-$(shell uname -m).tar.gz"
+
+dist-win64:
+	@$(MAKE) --no-print-directory win64
+	@sh scripts/bundle-win.sh "build/windows-mingw/$(NAME).exe" "dist/$(NAME)-$(VERSION)-win64" "$(TRIPLE)"
+
+dist-arch:
+	@command -v makepkg >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1 || { echo "dist-arch needs pacman/makepkg"; exit 2; }
+	@sed -e "s/@PKGVER@/0.0.0.r0.git/g" -e "s/@ARCH@/$(shell uname -m)/g" PKGBUILD.in > PKGBUILD
+	@makepkg -f
 
 dist-stable:
-	@printf "$(GREEN)==> Running stable build $(VERSION) before packaging$(RESET)\n"
-	@$(MAKE) --no-print-directory TARGET="$(TARGET)" all sessions data
-	@if ! command -v makepkg >/dev/null 2>&1 || ! command -v pacman >/dev/null 2>&1; then \
-		printf "$(RED)make dist-stable is only supported on pacman/makepkg systems$(RESET)\n"; \
-		exit 2; \
-	fi
-	@printf "$(CYAN)==> Generating stable PKGBUILD [version=$(VERSION), arch=$(HOST_ARCH)]$(RESET)\n"; \
-	sed -e "s/@PKGVER@/$(VERSION)/g" -e "s/@ARCH@/$(HOST_ARCH)/g" PKGBUILD.in > PKGBUILD; \
-	printf "$(GREEN)==> Building stable Arch package with makepkg$(RESET)\n"; \
-	LH4051_STABLE_VERSION="$(VERSION)" makepkg -f
+	@command -v makepkg >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1 || { echo "dist-stable needs pacman/makepkg"; exit 2; }
+	@sed -e "s/@PKGVER@/$(VERSION)/g" -e "s/@ARCH@/$(shell uname -m)/g" PKGBUILD.in > PKGBUILD
+	@LH4051_STABLE_VERSION="$(VERSION)" makepkg -f
+
+dist: dist-arch
 
 help:
-	@printf "$(CYAN)LH4051-DE $(VERSION)$(RESET)\n"
-	@printf "  Default target: $(GREEN)$(TARGET)$(RESET) (auto-detected)\n"
-	@printf "  Build:          $(GREEN)make$(RESET) or $(GREEN)make TARGET=<target>$(RESET)\n"
-	@printf "  Inspect:         $(GREEN)make show-target$(RESET)\n"
-	@printf "  CPU build:       $(GREEN)make cpu-build CPU=skylake$(RESET)\n"
-
-	@printf "  Run:             $(GREEN)make run$(RESET)\n"
-	@printf "  Package (pacman):$(GREEN) make dist$(RESET)\n"	@printf "  Clean:           $(GREEN)make clean$(RESET)\n"
-	@printf "  Linux targets:  %s\n" "$(LINUX_TARGETS)"
-	@printf "  Windows targets:%s\n" "$(WINDOWS_TARGETS)"
-	@printf "  macOS targets:  %s\n" "$(DARWIN_TARGETS)"
-	@printf "  FreeBSD targets:%s\n" "$(FREEBSD_TARGETS)"
-	@printf "  Generic target: $(GENERIC_TARGETS)\n"
-	@printf "$(DIM)Cross-compilers/toolchains and target SDKs are not installed by this Makefile. GTK4/gtk4-layer-shell must also exist for native builds.\n$(RESET)"
-
-# Compatibility with the previous ARCH interface.
-ifdef ARCH
-override TARGET := $(ARCH)
-endif
+	@echo "LH4051-DE $(VERSION)"
+	@echo ""
+	@echo "Targets"
+	@echo "  make / make linux    build for Linux (gcc; CC=clang works)"
+	@echo "  make win64           MinGW-w64 build -> build/windows-mingw/lh4051-de.exe"
+	@echo "                       (MSYS2 MINGW64 shell, or cross: apt install gcc-mingw-w64-x86-64 + MinGW GTK4)"
+	@echo "  make msvc            MSVC build; needs GTK_PREFIX=<gvsbuild tree> and a VS developer prompt"
+	@echo "  make run [ARGS=-w]   build and run"
+	@echo "  make install         install to PREFIX (default /usr/local; DESTDIR supported)"
+	@echo "  make dist-linux      dist/lh4051-de-<ver>-linux-<arch>.tar.gz"
+	@echo "  make dist-win64      dist/lh4051-de-<ver>-win64/ + .zip with bundled GTK runtime"
+	@echo "  make dist-arch       Arch package via makepkg"
+	@echo "  make show-config     print the resolved toolchain/flags"
+	@echo "  make clean"
+	@echo ""
+	@echo "Variables: DEBUG=1 LTO=1 MARCH=x86-64-v3 CONSOLE=1 LAYER_SHELL=auto|1|0 PREFIX= DESTDIR="
+	@echo "           CC= TRIPLE= MINGW_PREFIX= GTK_PREFIX= BUILD="

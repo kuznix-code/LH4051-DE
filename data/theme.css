@@ -1,0 +1,186 @@
+/* LH4051-DE — Longhorn Build 4051 inspired theme.
+ * Palette: slate/steel taskbar, aqua "Aurora" desktop, glassy blue accents. */
+
+@define-color lh_slate_top #5a6e85;
+@define-color lh_slate_mid #34475c;
+@define-color lh_slate_bot #1b2735;
+@define-color lh_blue #2f6fb5;
+@define-color lh_blue_light #8fc0ea;
+@define-color lh_ink #17212a;
+@define-color lh_paper #f4f7fa;
+@define-color lh_line #aab7c2;
+
+window { font-family: "Segoe UI", "Noto Sans", "Cantarell", sans-serif; font-size: 10pt; }
+
+/* ---------- desktop ---------- */
+.lh-desktop { background-color: #4f86ad; }
+.lh-wallpaper-fallback {
+    background-image: linear-gradient(180deg, #70b4d7 0%, #9bd1e5 45%, #d8c88b 72%, #8d9849 100%);
+}
+.lh-watermark { color: rgba(255,255,255,.85); font-size: 9pt; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.lh-desk-icon { padding: 6px 4px; margin: 2px; min-width: 86px; border-radius: 3px; border: 1px solid transparent; }
+.lh-desk-icon.selected { background-color: rgba(70,130,200,.45); border-color: rgba(190,220,255,.75); }
+.lh-desk-icon-label { color: white; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
+
+/* ---------- taskbar ---------- */
+.lh-panel {
+    background-image: linear-gradient(180deg, @lh_slate_top 0%, @lh_slate_mid 46%, @lh_slate_bot 100%);
+    border-top: 1px solid rgba(255,255,255,.45);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+    color: white;
+}
+.lh-panel label, .lh-panel image { color: white; }
+
+button.lh-start-btn {
+    min-height: 30px; margin: 4px 8px 4px 6px; padding: 0 14px 0 6px;
+    border-radius: 16px; border: 1px solid rgba(220,235,250,.75);
+    background-image: linear-gradient(180deg, #8eb4d6 0%, #3f6d9b 48%, #20405f 52%, #2c5a86 100%);
+    box-shadow: 0 1px 3px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.55);
+    text-shadow: 0 1px 1px rgba(0,0,0,.6);
+    color: white; font-weight: bold; font-size: 11pt;
+}
+button.lh-start-btn:hover { background-image: linear-gradient(180deg, #a9ccec 0%, #4f83b7 48%, #2a5380 52%, #3a74a8 100%); }
+button.lh-start-btn:active { background-image: linear-gradient(180deg, #20405f, #2c5a86); }
+.lh-orb {
+    min-width: 20px; min-height: 20px; border-radius: 10px;
+    background-image: linear-gradient(135deg, #ffffff 0%, #bfe0ff 30%, #3b86d6 70%, #174a85 100%);
+    border: 1px solid rgba(255,255,255,.8);
+}
+
+button.lh-quick { min-width: 30px; min-height: 30px; margin: 4px 2px; padding: 0; border-radius: 4px;
+    background-image: none; background-color: transparent; border: 1px solid transparent; box-shadow: none; }
+button.lh-quick:hover { background-color: rgba(255,255,255,.18); border-color: rgba(255,255,255,.35); }
+
+button.lh-task {
+    min-height: 28px; min-width: 120px; margin: 5px 2px; padding: 0 10px; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,.28);
+    background-image: linear-gradient(180deg, rgba(255,255,255,.24), rgba(255,255,255,.06));
+    box-shadow: none; text-shadow: 0 1px 1px rgba(0,0,0,.5); color: white;
+}
+button.lh-task:hover { background-image: linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,255,255,.12)); }
+button.lh-task.active {
+    background-image: linear-gradient(180deg, rgba(0,0,0,.35), rgba(255,255,255,.10));
+    border-color: rgba(190,220,255,.8);
+}
+
+.lh-tray { padding: 0 12px; margin: 5px 0; border-left: 1px solid rgba(255,255,255,.22); }
+.lh-tray-icon { opacity: .9; }
+.lh-clock { font-size: 10pt; font-weight: 600; min-width: 68px; }
+
+/* ---------- sidebar ---------- */
+.lh-sidebar {
+    background-image: linear-gradient(180deg, rgba(48,70,98,.93), rgba(24,36,52,.95));
+    border-left: 1px solid rgba(190,215,240,.55);
+    color: white;
+}
+button.lh-sidebar-handle {
+    min-width: 22px; padding: 0; border-radius: 0; border: none; box-shadow: none;
+    background-image: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,.04)); color: white;
+}
+button.lh-sidebar-handle:hover { background-image: linear-gradient(90deg, rgba(255,255,255,.32), rgba(255,255,255,.10)); }
+.lh-tile { margin: 8px 8px 0 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,.22);
+    background-color: rgba(120,150,185,.22); }
+.lh-tile-title { padding: 4px 10px; font-weight: bold; color: #dbe8f5; font-size: 9pt;
+    background-image: linear-gradient(180deg, rgba(255,255,255,.25), rgba(255,255,255,.05));
+    border-radius: 5px 5px 0 0; }
+.lh-tile-body { padding: 8px; }
+.lh-digital { font-size: 17pt; font-weight: 600; color: white; }
+.lh-date { color: #bcd0e2; }
+.lh-sidebar entry, .lh-sidebar text { color: white; background-color: rgba(10,20,32,.55); }
+textview.lh-notes, textview.lh-notes text { background-color: rgba(255,250,200,.92); color: #3b3412; }
+
+/* ---------- start menu ---------- */
+.lh-start-menu {
+    background-color: #e9eef4; border: 1px solid #6f8398; border-radius: 6px 6px 0 0;
+    box-shadow: 0 -4px 18px rgba(0,0,0,.45);
+}
+.lh-start-left { background-color: white; border-radius: 6px 0 0 0; padding: 8px; }
+.lh-start-right { background-image: linear-gradient(180deg, #4c7db3, #28507f); padding: 10px; border-radius: 0 6px 0 0; }
+.lh-start-left button.lh-start-item { color: @lh_ink; }
+.lh-start-right button.lh-start-item, .lh-start-right label { color: white; }
+button.lh-start-item {
+    min-height: 34px; padding: 2px 8px; border-radius: 3px; border: 1px solid transparent;
+    background-image: none; background-color: transparent; box-shadow: none; text-shadow: none;
+}
+.lh-start-left button.lh-start-item:hover { background-color: #d9e8f6; border-color: #9fc2e4; }
+.lh-start-right button.lh-start-item:hover { background-color: rgba(255,255,255,.22); border-color: rgba(255,255,255,.4); }
+button.lh-start-allprograms { font-weight: bold; margin-top: 4px; }
+row.lh-start-row { padding: 4px 6px; border-radius: 3px; }
+row.lh-start-row:hover { background-color: #d9e8f6; }
+.lh-start-empty { padding: 12px; color: #52636e; }
+.lh-start-search { margin-top: 6px; }
+.lh-user { padding: 4px 4px 10px 4px; }
+.lh-avatar { min-width: 44px; min-height: 44px; border-radius: 8px; font-size: 20pt; font-weight: bold; color: white;
+    background-image: linear-gradient(135deg, #8cc4ef, #2f6fb5); border: 2px solid rgba(255,255,255,.85); }
+.lh-username { font-size: 13pt; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.lh-start-power { padding-top: 8px; border-top: 1px solid rgba(255,255,255,.3); }
+button.lh-power-btn { border-radius: 4px; border: 1px solid rgba(255,255,255,.5); color: white; box-shadow: none; text-shadow: none;
+    background-image: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.08)); }
+button.lh-power-btn:hover { background-image: linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,.16)); }
+
+/* ---------- window chrome ---------- */
+.lh-titlebar {
+    min-height: 30px; padding: 0 0 0 10px;
+    background-image: linear-gradient(180deg, #dfeaf6 0%, #b3cbe3 48%, #9bb8d6 52%, #aac4de 100%);
+    border-bottom: 1px solid #6f8ba8;
+}
+.lh-title { color: @lh_ink; font-weight: bold; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
+button.lh-winbtn { min-width: 34px; min-height: 22px; margin: 2px 1px; padding: 0; border-radius: 3px;
+    border: 1px solid rgba(40,70,100,.45); box-shadow: inset 0 1px 0 rgba(255,255,255,.6);
+    background-image: linear-gradient(180deg, #f2f7fc, #bdd0e4); color: @lh_ink; }
+button.lh-winbtn:hover { background-image: linear-gradient(180deg, #ffffff, #cfe0f1); }
+button.lh-winbtn-close { margin-right: 6px; color: white; border-color: #7a1c18;
+    background-image: linear-gradient(180deg, #ee7d73, #c23a32 50%, #a82a24 52%, #c8443a); }
+button.lh-winbtn-close:hover { background-image: linear-gradient(180deg, #f59b92, #d54a40 50%, #b8322c 52%, #d95a50); }
+
+/* ---------- explorer ---------- */
+.lh-explorer { background-color: @lh_paper; color: @lh_ink; }
+.lh-menu { background-color: #eef1f4; border-bottom: 1px solid @lh_line; }
+button.lh-menubtn { padding: 1px 8px; min-height: 24px; }
+button.lh-menu-item { padding: 4px 14px; min-width: 160px; }
+.lh-toolbar { background-image: linear-gradient(180deg, #f7f9fb, #dfe5ea); border-bottom: 1px solid @lh_line; padding: 4px 6px; }
+.lh-phode { background-image: linear-gradient(90deg, #2f6fb5, #8fc0ea); color: white; padding: 14px 18px; }
+.lh-phode-title { font-size: 18pt; font-weight: 300; text-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.lh-phode-sub { color: rgba(255,255,255,.88); }
+.lh-filter { background-color: #e7edf2; border-right: 1px solid @lh_line; padding: 8px 6px; }
+.lh-filter-title { font-weight: bold; color: #334b5c; padding: 4px 6px; }
+button.lh-place { padding: 3px 6px; border-radius: 3px; color: @lh_ink; }
+button.lh-place:hover { background-color: #cfe2f4; }
+.lh-colheads { border-bottom: 1px solid @lh_line; }
+button.lh-colhead { border-radius: 0; border: none; border-right: 1px solid #d0d8de; background-image: none;
+    background-color: #f1f4f7; box-shadow: none; padding: 3px 8px; color: #334b5c; }
+button.lh-colhead:hover { background-color: #e1ecf7; }
+.lh-row-label { color: @lh_ink; }
+.lh-explorer row:selected { background-color: #cde3f7; }
+.lh-explorer row:selected .lh-row-label { color: @lh_ink; }
+.lh-status { padding: 4px 10px; border-top: 1px solid @lh_line; background-color: #eef1f4; color: #334b5c; }
+
+/* ---------- settings ---------- */
+.lh-settings { background-color: #edf2f5; padding: 6px; }
+.lh-card { margin: 8px; padding: 14px; background-color: white; border: 1px solid #b8c4cc; border-radius: 5px; color: @lh_ink; }
+.lh-card-title { font-size: 13pt; font-weight: bold; color: #334b5c; }
+.lh-card-desc { color: #52636e; }
+
+/* ---------- app store ---------- */
+.lh-store { background-color: #11161b; color: #e8edf1; }
+.lh-store-header { padding: 18px 22px; background-image: linear-gradient(135deg, #1b2a35, #12171c); border-bottom: 1px solid #34414b; }
+.lh-store-title { font-size: 18pt; font-weight: bold; }
+.lh-store-status { color: #9fb0ba; }
+.lh-store-section { font-weight: bold; padding: 6px 2px; color: #c7d6df; font-size: 11pt; }
+.lh-store-search { min-height: 38px; background-color: #20282f; color: #edf3f7; border: 1px solid #46535e; }
+button.lh-store-search-button { min-height: 38px; padding: 0 20px; background-image: none; background-color: #2d6d98; color: white; border: 1px solid #4d88ad; }
+.lh-store-app-card { margin: 4px; padding: 12px; border-radius: 9px; background-color: #1c2228; border: 1px solid #35414a; }
+.lh-store-app-card:hover { background-color: #222a31; border-color: #4b6170; }
+.lh-store-icon-box { min-width: 60px; min-height: 60px; padding: 4px; border-radius: 10px; background-color: #11171c; border: 1px solid #33404a; }
+.lh-store-app-name { font-size: 12pt; font-weight: bold; color: #edf3f7; }
+.lh-store-app-summary { color: #aebbc4; }
+
+/* ---------- package operation ---------- */
+.lh-operation { background-color: #10151a; color: #e8eef2; }
+.lh-operation-title { font-size: 15pt; font-weight: bold; color: #f1f5f7; }
+.lh-operation-detail, .lh-operation-status { color: #aebbc4; }
+.lh-operation-success { color: #72d69a; }
+.lh-operation-failed { color: #ff817b; }
+textview.lh-terminal, textview.lh-terminal text { background-color: #080b0e; color: #d5e3d9; font-family: monospace; font-size: 10pt; }
+
+scrollbar slider { min-width: 8px; min-height: 8px; }

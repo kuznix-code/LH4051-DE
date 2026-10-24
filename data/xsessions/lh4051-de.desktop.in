@@ -1,8 +1,8 @@
 [Desktop Entry]
 Name=LH4051-DE
-Comment=Longhorn 4051 inspired desktop shell for X11
-Exec=@bindir@/lh4051-de
+Comment=Longhorn Build 4051 style desktop (X11)
+Exec=@bindir@/lh4051-de-session --x11
 TryExec=@bindir@/lh4051-de
 Type=Application
 DesktopNames=LH4051-DE
-X-GDM-SessionRegisters=true
+X-LH4051-Version=@version@

@@ -2,274 +2,433 @@
 #include "LH4051-FM/fm.h"
 #include "LH4051-WM/wm.h"
 
+#define COL_SIZE 90
+#define COL_TYPE 150
+#define COL_DATE 160
+
 typedef struct {
+    GtkApplication *app;
     GtkWindow *window;
     GtkListBox *list;
     GtkWidget *path_entry;
+    GtkWidget *search_entry;
     GtkWidget *status;
+    GtkWidget *phode_title;
+    GtkWidget *phode_sub;
+    GtkWidget *back, *forward;
     char *path;
-} ExplorerState;
+    GPtrArray *history;
+    int pos;
+    gboolean show_hidden;
+    LH4051FMSort sort;
+    gboolean ascending;
+} Explorer;
 
-static void explorer_show_error(ExplorerState *state, const char *message)
+static void explorer_free(Explorer *x)
 {
-    gtk_label_set_text(GTK_LABEL(state->status), message);
+    g_free(x->path);
+    if (x->history) g_ptr_array_unref(x->history);
+    g_free(x);
 }
 
-static void explorer_clear_list(GtkListBox *list)
-{
-    GtkWidget *child;
+/* ---------- listing ---------- */
 
-    while ((child = gtk_widget_get_first_child(GTK_WIDGET(list))) != NULL)
-        gtk_list_box_remove(list, child);
+static GtkWidget *cell(const char *text, int width, gboolean expand)
+{
+    GtkWidget *l = gtk_label_new(text);
+    gtk_label_set_xalign(GTK_LABEL(l), 0);
+    gtk_label_set_ellipsize(GTK_LABEL(l), PANGO_ELLIPSIZE_END);
+    gtk_widget_add_css_class(l, "lh-row-label");
+    if (expand) gtk_widget_set_hexpand(l, TRUE);
+    else gtk_widget_set_size_request(l, width, -1);
+    return l;
 }
 
-static GtkWidget *make_file_row(LH4051FMItem *item)
+static GtkWidget *make_row(const LH4051FMItem *item)
 {
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    GtkWidget *icon = gtk_label_new(item->type == G_FILE_TYPE_DIRECTORY ? "📁" : "📄");
-    GtkWidget *name = gtk_label_new(item->name);
+    GtkWidget *icon = item->icon ? gtk_image_new_from_gicon(item->icon)
+                                 : gtk_image_new_from_icon_name(item->type == G_FILE_TYPE_DIRECTORY ? "folder" : "text-x-generic");
+    GtkWidget *name_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    char *size = lh4051_fm_format_size(item), *date = lh4051_fm_format_date(item->modified);
+
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 20);
+    gtk_widget_set_hexpand(name_box, TRUE);
+    gtk_box_append(GTK_BOX(name_box), icon);
+    gtk_box_append(GTK_BOX(name_box), cell(item->display_name, 0, TRUE));
+    gtk_box_append(GTK_BOX(box), name_box);
+    gtk_box_append(GTK_BOX(box), cell(size, COL_SIZE, FALSE));
+    gtk_box_append(GTK_BOX(box), cell(item->type_desc, COL_TYPE, FALSE));
+    gtk_box_append(GTK_BOX(box), cell(date, COL_DATE, FALSE));
+    g_free(size); g_free(date);
 
     gtk_widget_set_margin_start(box, 8);
     gtk_widget_set_margin_end(box, 8);
-    gtk_widget_set_margin_top(box, 4);
-    gtk_widget_set_margin_bottom(box, 4);
-    gtk_label_set_xalign(GTK_LABEL(name), 0);
-    gtk_widget_set_hexpand(name, TRUE);
-
-    gtk_box_append(GTK_BOX(box), icon);
-    gtk_box_append(GTK_BOX(box), name);
+    gtk_widget_set_margin_top(box, 3);
+    gtk_widget_set_margin_bottom(box, 3);
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
-
-    /* Keep the complete path on the row so activation never depends on
-     * widget text or pointer lifetime. */
-    g_object_set_data_full(G_OBJECT(row), "lh4051-path", g_strdup(item->path), g_free);
-    g_object_set_data_full(G_OBJECT(row), "lh4051-type",
-                           GINT_TO_POINTER((gint)item->type), NULL);
+    g_object_set_data_full(G_OBJECT(row), "lh-path", g_strdup(item->path), g_free);
+    g_object_set_data(G_OBJECT(row), "lh-dir", GINT_TO_POINTER(item->type == G_FILE_TYPE_DIRECTORY));
     return row;
 }
 
-static void explorer_open_file(ExplorerState *state, const char *path)
+static void update_nav(Explorer *x)
 {
-    GFile *file = g_file_new_for_path(path);
-    char *uri = g_file_get_uri(file);
+    gtk_widget_set_sensitive(x->back, x->pos > 0);
+    gtk_widget_set_sensitive(x->forward, x->history && x->pos + 1 < (int)x->history->len);
+}
+
+/* Reload the current folder. Returns FALSE (and reports) on failure. */
+static gboolean reload(Explorer *x, const char *path)
+{
     GError *error = NULL;
+    const char *filter = gtk_editable_get_text(GTK_EDITABLE(x->search_entry));
+    GPtrArray *items = lh4051_fm_list(path, x->show_hidden, filter, x->sort, x->ascending, &error);
+    GtkWidget *child;
+    char *text, *base;
 
-    if (!g_app_info_launch_default_for_uri(uri, NULL, &error)) {
-        explorer_show_error(state, error ? error->message : "No application is registered for this file.");
+    if (!items) {
+        gtk_label_set_text(GTK_LABEL(x->status), error ? error->message : "Cannot open this folder.");
         g_clear_error(&error);
-    } else {
-        explorer_show_error(state, "Opened with the default application.");
+        return FALSE;
     }
 
-    g_free(uri);
-    g_object_unref(file);
-}
+    while ((child = gtk_widget_get_first_child(GTK_WIDGET(x->list))) != NULL)
+        gtk_list_box_remove(x->list, child);
+    for (guint i = 0; i < items->len; i++)
+        gtk_list_box_append(x->list, make_row(g_ptr_array_index(items, i)));
 
-static void explorer_load_path(ExplorerState *state, const char *path)
-{
-    GPtrArray *items;
-    GFile *file;
+    text = g_strdup_printf("%u item%s", items->len, items->len == 1 ? "" : "s");
+    gtk_label_set_text(GTK_LABEL(x->status), text);
+    gtk_label_set_text(GTK_LABEL(x->phode_sub), text);
+    g_free(text);
 
-    if (!path || !*path)
-        return;
-
-    file = g_file_new_for_path(path);
-    if (!g_file_query_exists(file, NULL)) {
-        explorer_show_error(state, "Folder does not exist.");
-        g_object_unref(file);
-        return;
-    }
-    g_object_unref(file);
-
-    g_free(state->path);
-    state->path = g_canonicalize_filename(path, NULL);
-    gtk_editable_set_text(GTK_EDITABLE(state->path_entry), state->path);
-
-    explorer_clear_list(state->list);
-    items = lh4051_fm_list(state->path);
-
-    for (guint i = 0; i < items->len; i++) {
-        LH4051FMItem *item = g_ptr_array_index(items, i);
-        gtk_list_box_append(state->list, make_file_row(item));
-    }
-
-    gtk_label_set_text(GTK_LABEL(state->status),
-                       g_strdup_printf("%u items", items->len));
+    base = g_path_get_basename(path);
+    gtk_label_set_text(GTK_LABEL(x->phode_title), (base && *base && g_strcmp0(base, ".") != 0) ? base : path);
+    lh4051_wm_set_title(x->window, gtk_label_get_text(GTK_LABEL(x->phode_title)));
+    g_free(base);
     lh4051_fm_free_list(items);
+    return TRUE;
 }
 
-static void explorer_row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer user_data)
+static gboolean go(Explorer *x, const char *path, gboolean push)
 {
-    ExplorerState *state = user_data;
-    const char *path = g_object_get_data(G_OBJECT(row), "lh4051-path");
-    GFileType type = (GFileType)GPOINTER_TO_INT(
-        g_object_get_data(G_OBJECT(row), "lh4051-type")
-    );
+    char *canon = g_canonicalize_filename(path, NULL);
+    if (push && g_strcmp0(canon, x->path) == 0) push = FALSE;
+    if (!reload(x, canon)) { g_free(canon); return FALSE; }
 
+    g_free(x->path);
+    x->path = canon;
+    gtk_editable_set_text(GTK_EDITABLE(x->path_entry), x->path);
+
+    if (push) {
+        while (x->history->len > (guint)(x->pos + 1))
+            g_ptr_array_remove_index(x->history, x->history->len - 1);
+        g_ptr_array_add(x->history, g_strdup(x->path));
+        x->pos = (int)x->history->len - 1;
+    }
+    update_nav(x);
+    return TRUE;
+}
+
+static void refresh(Explorer *x) { if (x->path) reload(x, x->path); }
+
+/* ---------- callbacks ---------- */
+
+static void row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer data)
+{
+    Explorer *x = data;
+    const char *path = g_object_get_data(G_OBJECT(row), "lh-path");
     (void)list;
-
-    if (!path)
-        return;
-
-    if (type == G_FILE_TYPE_DIRECTORY)
-        explorer_load_path(state, path);
-    else
-        explorer_open_file(state, path);
+    if (!path) return;
+    if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "lh-dir"))) {
+        go(x, path, TRUE);
+    } else {
+        GFile *f = g_file_new_for_path(path);
+        char *uri = g_file_get_uri(f);
+        GError *error = NULL;
+        if (!g_app_info_launch_default_for_uri(uri, NULL, &error)) {
+            gtk_label_set_text(GTK_LABEL(x->status), error ? error->message : "No application is registered for this file.");
+            g_clear_error(&error);
+        }
+        g_free(uri);
+        g_object_unref(f);
+    }
 }
 
-static void explorer_go_up(GtkButton *button, gpointer user_data)
+static void on_back(GtkButton *b, gpointer d)
 {
-    ExplorerState *state = user_data;
-    char *parent;
-
-    (void)button;
-
-    parent = g_path_get_dirname(state->path);
-    if (g_strcmp0(parent, state->path) != 0)
-        explorer_load_path(state, parent);
+    Explorer *x = d; (void)b;
+    if (x->pos > 0 && go(x, g_ptr_array_index(x->history, x->pos - 1), FALSE)) { x->pos--; update_nav(x); }
+}
+static void on_forward(GtkButton *b, gpointer d)
+{
+    Explorer *x = d; (void)b;
+    if (x->pos + 1 < (int)x->history->len && go(x, g_ptr_array_index(x->history, x->pos + 1), FALSE)) { x->pos++; update_nav(x); }
+}
+static void on_up(GtkButton *b, gpointer d)
+{
+    Explorer *x = d;
+    char *parent = g_path_get_dirname(x->path);
+    (void)b;
+    if (g_strcmp0(parent, x->path) != 0) go(x, parent, TRUE);
     g_free(parent);
 }
-
-static void explorer_path_activate(GtkEntry *entry, gpointer user_data)
+static void on_path_activate(GtkEntry *e, gpointer d)
 {
-    ExplorerState *state = user_data;
-    const char *path = gtk_editable_get_text(GTK_EDITABLE(entry));
+    const char *p = gtk_editable_get_text(GTK_EDITABLE(e));
+    if (p && *p) go(d, p, TRUE);
+}
+static void on_search_changed(GtkSearchEntry *e, gpointer d) { (void)e; refresh(d); }
 
-    if (path && *path)
-        explorer_load_path(state, path);
+static void on_sort(GtkButton *b, gpointer d)
+{
+    Explorer *x = d;
+    LH4051FMSort s = (LH4051FMSort)GPOINTER_TO_INT(g_object_get_data(G_OBJECT(b), "lh-sort"));
+    if (s == x->sort) x->ascending = !x->ascending;
+    else { x->sort = s; x->ascending = TRUE; }
+    refresh(x);
 }
 
-static void close_explorer(GtkButton *button, gpointer user_data)
+static void on_place(GtkButton *b, gpointer d)
 {
-    GtkWindow *window = GTK_WINDOW(user_data);
-    (void)button;
-    lh4051_wm_unregister(window);
-    gtk_window_destroy(window);
+    const char *path = g_object_get_data(G_OBJECT(b), "lh-place");
+    if (path) go(d, path, TRUE);
 }
 
-void create_file_explorer(GtkApplication *app, const char *path)
+/* ---------- menus ---------- */
+
+typedef struct { Explorer *x; GtkWidget *popover; GCallback cb; } MenuItemData;
+
+static void menu_item_clicked(GtkButton *b, gpointer data)
 {
-    ExplorerState *state = g_new0(ExplorerState, 1);
-    GtkWidget *window = gtk_application_window_new(app);
-    GtkWindow *win = GTK_WINDOW(window);
-    GtkWidget *root;
-    GtkWidget *titlebar;
-    GtkWidget *toolbar;
-    GtkWidget *content;
-    GtkWidget *filter;
-    GtkWidget *right;
-    GtkWidget *columns;
-    GtkWidget *close_button;
-    GtkWidget *title;
-    GtkWidget *path_entry;
-    GtkWidget *search;
-    GtkWidget *status;
-    const char *menus[] = {"File", "Edit", "View", "Favorites", "Tools", "Help"};
-    const char *heads[] = {"Name", "Size", "Type", "Date Modified"};
+    MenuItemData *m = data;
+    (void)b;
+    gtk_popover_popdown(GTK_POPOVER(m->popover));
+    ((void (*)(Explorer *))m->cb)(m->x);
+}
 
-    state->window = win;
-    state->path = g_canonicalize_filename(path ? path : g_get_home_dir(), NULL);
+static void add_menu_item(GtkWidget *box, GtkWidget *popover, Explorer *x, const char *label, GCallback cb)
+{
+    GtkWidget *b = gtk_button_new_with_label(label);
+    MenuItemData *m = g_new0(MenuItemData, 1);
+    m->x = x; m->popover = popover; m->cb = cb;
+    gtk_widget_add_css_class(b, "flat");
+    gtk_widget_add_css_class(b, "lh-menu-item");
+    gtk_label_set_xalign(GTK_LABEL(gtk_button_get_child(GTK_BUTTON(b))), 0);
+    g_signal_connect_data(b, "clicked", G_CALLBACK(menu_item_clicked), m, (GClosureNotify)g_free, 0);
+    gtk_box_append(GTK_BOX(box), b);
+}
 
-    gtk_window_set_title(win, "My Documents");
-    gtk_window_set_default_size(win, 980, 680);
-    lh4051_wm_register(win, "My Documents");
+static void m_new_window(Explorer *x) { lh4051_explorer_open(x->app, x->path); }
+static void m_close(Explorer *x) { gtk_window_close(x->window); }
+static void m_select_all(Explorer *x) { gtk_list_box_select_all(x->list); }
+static void m_refresh(Explorer *x) { refresh(x); }
+static void m_hidden(Explorer *x) { x->show_hidden = !x->show_hidden; refresh(x); }
+static void m_home(Explorer *x) { go(x, g_get_home_dir(), TRUE); }
+static void m_docs(Explorer *x) { go(x, lh4051_user_dir(G_USER_DIRECTORY_DOCUMENTS), TRUE); }
+static void m_pics(Explorer *x) { go(x, lh4051_user_dir(G_USER_DIRECTORY_PICTURES), TRUE); }
+static void m_settings(Explorer *x) { lh4051_settings_open(x->app); }
 
-    root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+static void about_done(GObject *s, GAsyncResult *r, gpointer d)
+{
+    (void)d;
+    gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(s), r, NULL);
+    g_object_unref(s);
+}
+static void m_about(Explorer *x)
+{
+    GtkAlertDialog *dlg = gtk_alert_dialog_new("LH4051-DE Explorer");
+    char *detail = g_strdup_printf("Longhorn Build 4051 style desktop environment\nVersion %s", LH4051_VERSION);
+    gtk_alert_dialog_set_detail(dlg, detail);
+    g_free(detail);
+    gtk_alert_dialog_choose(dlg, x->window, NULL, about_done, NULL);
+}
+
+static GtkWidget *menu_button_new(Explorer *x, const char *label, const char *const *names, GCallback const *cbs, int n)
+{
+    GtkWidget *mb = gtk_menu_button_new();
+    GtkWidget *pop = gtk_popover_new();
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_menu_button_set_label(GTK_MENU_BUTTON(mb), label);
+    gtk_widget_add_css_class(mb, "flat");
+    gtk_widget_add_css_class(mb, "lh-menubtn");
+    gtk_popover_set_child(GTK_POPOVER(pop), box);
+    gtk_popover_set_has_arrow(GTK_POPOVER(pop), FALSE);
+    for (int i = 0; i < n; i++) add_menu_item(box, pop, x, names[i], cbs[i]);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(mb), pop);
+    return mb;
+}
+
+static GtkWidget *build_menubar(Explorer *x)
+{
+    GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    const char *file[] = {"New Window", "Close"};
+    GCallback file_cb[] = {G_CALLBACK(m_new_window), G_CALLBACK(m_close)};
+    const char *edit[] = {"Select All"};
+    GCallback edit_cb[] = {G_CALLBACK(m_select_all)};
+    const char *view[] = {"Show/Hide Hidden Files", "Refresh"};
+    GCallback view_cb[] = {G_CALLBACK(m_hidden), G_CALLBACK(m_refresh)};
+    const char *fav[] = {"Home", "Documents", "Pictures"};
+    GCallback fav_cb[] = {G_CALLBACK(m_home), G_CALLBACK(m_docs), G_CALLBACK(m_pics)};
+    const char *tools[] = {"LH4051 Settings"};
+    GCallback tools_cb[] = {G_CALLBACK(m_settings)};
+    const char *help[] = {"About"};
+    GCallback help_cb[] = {G_CALLBACK(m_about)};
+
+    gtk_widget_add_css_class(bar, "lh-menu");
+    gtk_box_append(GTK_BOX(bar), menu_button_new(x, "File", file, file_cb, 2));
+    gtk_box_append(GTK_BOX(bar), menu_button_new(x, "Edit", edit, edit_cb, 1));
+    gtk_box_append(GTK_BOX(bar), menu_button_new(x, "View", view, view_cb, 2));
+    gtk_box_append(GTK_BOX(bar), menu_button_new(x, "Favorites", fav, fav_cb, 3));
+    gtk_box_append(GTK_BOX(bar), menu_button_new(x, "Tools", tools, tools_cb, 1));
+    gtk_box_append(GTK_BOX(bar), menu_button_new(x, "Help", help, help_cb, 1));
+    return bar;
+}
+
+/* ---------- window ---------- */
+
+static GtkWidget *place_button(Explorer *x, const char *icon, const char *label, const char *path)
+{
+    GtkWidget *b = gtk_button_new();
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *img = gtk_image_new_from_icon_name(icon);
+    GtkWidget *text = gtk_label_new(label);
+    gtk_label_set_xalign(GTK_LABEL(text), 0);
+    gtk_box_append(GTK_BOX(row), img);
+    gtk_box_append(GTK_BOX(row), text);
+    gtk_button_set_child(GTK_BUTTON(b), row);
+    gtk_widget_add_css_class(b, "flat");
+    gtk_widget_add_css_class(b, "lh-place");
+    g_object_set_data_full(G_OBJECT(b), "lh-place", g_strdup(path), g_free);
+    g_signal_connect(b, "clicked", G_CALLBACK(on_place), x);
+    return b;
+}
+
+static GtkWidget *column_head(Explorer *x, const char *label, LH4051FMSort sort, int width)
+{
+    GtkWidget *b = gtk_button_new_with_label(label);
+    gtk_widget_add_css_class(b, "lh-colhead");
+    gtk_label_set_xalign(GTK_LABEL(gtk_button_get_child(GTK_BUTTON(b))), 0);
+    if (width) gtk_widget_set_size_request(b, width, -1);
+    else gtk_widget_set_hexpand(b, TRUE);
+    g_object_set_data(G_OBJECT(b), "lh-sort", GINT_TO_POINTER(sort));
+    g_signal_connect(b, "clicked", G_CALLBACK(on_sort), x);
+    return b;
+}
+
+void lh4051_explorer_open_search(GtkApplication *app, const char *path, const char *query)
+{
+    Explorer *x = g_new0(Explorer, 1);
+    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *up = gtk_button_new_from_icon_name("go-up-symbolic");
+    GtkWidget *content = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    GtkWidget *side = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *phode = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *heads = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    char *root_dir = lh4051_computer_root();
+
+    x->app = app;
+    x->history = g_ptr_array_new_with_free_func(g_free);
+    x->pos = -1;
+    x->ascending = TRUE;
+    x->sort = LH4051_FM_SORT_NAME;
+
     gtk_widget_add_css_class(root, "lh-explorer");
-    gtk_window_set_child(win, root);
+    gtk_box_append(GTK_BOX(root), build_menubar(x));
 
-    titlebar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_widget_add_css_class(titlebar, "lh-titlebar");
-    title = gtk_label_new("My Documents");
-    gtk_widget_set_hexpand(title, TRUE);
-    gtk_label_set_xalign(GTK_LABEL(title), 0);
-    gtk_box_append(GTK_BOX(titlebar), title);
-
-    close_button = gtk_button_new_with_label("✕");
-    gtk_widget_add_css_class(close_button, "lh-close");
-    g_signal_connect(close_button, "clicked", G_CALLBACK(close_explorer), win);
-    gtk_box_append(GTK_BOX(titlebar), close_button);
-    gtk_box_append(GTK_BOX(root), titlebar);
-
-    GtkWidget *menu_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_add_css_class(menu_bar, "lh-menu");
-    for (guint i = 0; i < G_N_ELEMENTS(menus); i++) {
-        GtkWidget *button = gtk_button_new_with_label(menus[i]);
-        gtk_box_append(GTK_BOX(menu_bar), button);
-    }
-    gtk_box_append(GTK_BOX(root), menu_bar);
-
-    toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_widget_add_css_class(toolbar, "lh-toolbar");
-
-    GtkWidget *back = gtk_button_new_with_label("←");
-    GtkWidget *forward = gtk_button_new_with_label("→");
-    GtkWidget *up = gtk_button_new_with_label("↑");
-    gtk_box_append(GTK_BOX(toolbar), back);
-    gtk_box_append(GTK_BOX(toolbar), forward);
+    x->back = gtk_button_new_from_icon_name("go-previous-symbolic");
+    x->forward = gtk_button_new_from_icon_name("go-next-symbolic");
+    g_signal_connect(x->back, "clicked", G_CALLBACK(on_back), x);
+    g_signal_connect(x->forward, "clicked", G_CALLBACK(on_forward), x);
+    g_signal_connect(up, "clicked", G_CALLBACK(on_up), x);
+    gtk_box_append(GTK_BOX(toolbar), x->back);
+    gtk_box_append(GTK_BOX(toolbar), x->forward);
     gtk_box_append(GTK_BOX(toolbar), up);
-
-    path_entry = gtk_entry_new();
-    gtk_widget_set_hexpand(path_entry, TRUE);
-    gtk_box_append(GTK_BOX(toolbar), path_entry);
-
-    search = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(search), "Search");
-    gtk_widget_set_size_request(search, 190, -1);
-    gtk_box_append(GTK_BOX(toolbar), search);
+    x->path_entry = gtk_entry_new();
+    gtk_widget_set_hexpand(x->path_entry, TRUE);
+    g_signal_connect(x->path_entry, "activate", G_CALLBACK(on_path_activate), x);
+    gtk_box_append(GTK_BOX(toolbar), x->path_entry);
+    x->search_entry = gtk_search_entry_new();
+    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(x->search_entry), "Search");
+    gtk_widget_set_size_request(x->search_entry, 190, -1);
+    g_signal_connect(x->search_entry, "search-changed", G_CALLBACK(on_search_changed), x);
+    gtk_box_append(GTK_BOX(toolbar), x->search_entry);
     gtk_box_append(GTK_BOX(root), toolbar);
 
-    content = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_paned_set_position(GTK_PANED(content), 220);
-    gtk_widget_set_vexpand(content, TRUE);
-
-    filter = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_add_css_class(filter, "lh-filter");
-    gtk_box_append(GTK_BOX(filter), gtk_label_new("Filter by"));
-    GtkWidget *filter_entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(filter_entry), "Filter...");
-    gtk_box_append(GTK_BOX(filter), filter_entry);
-
-    const char *filters[] = {"Recent Documents", "By Modified Year", "By Type", "By Size"};
-    for (guint i = 0; i < G_N_ELEMENTS(filters); i++)
-        gtk_box_append(GTK_BOX(filter), gtk_button_new_with_label(filters[i]));
-
-    right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    columns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_add_css_class(columns, "lh-toolbar");
-    for (guint i = 0; i < G_N_ELEMENTS(heads); i++) {
-        GtkWidget *button = gtk_button_new_with_label(heads[i]);
-        gtk_widget_set_hexpand(button, TRUE);
-        gtk_box_append(GTK_BOX(columns), button);
+    /* favorite links */
+    gtk_widget_add_css_class(side, "lh-filter");
+    {
+        GtkWidget *t = gtk_label_new("Favorite Links");
+        gtk_widget_add_css_class(t, "lh-filter-title");
+        gtk_label_set_xalign(GTK_LABEL(t), 0);
+        gtk_box_append(GTK_BOX(side), t);
     }
-    gtk_box_append(GTK_BOX(right), columns);
+    gtk_box_append(GTK_BOX(side), place_button(x, "user-home", "Home", g_get_home_dir()));
+    gtk_box_append(GTK_BOX(side), place_button(x, "user-desktop", "Desktop", lh4051_user_dir(G_USER_DIRECTORY_DESKTOP)));
+    gtk_box_append(GTK_BOX(side), place_button(x, "folder-documents", "Documents", lh4051_user_dir(G_USER_DIRECTORY_DOCUMENTS)));
+    gtk_box_append(GTK_BOX(side), place_button(x, "folder-download", "Downloads", lh4051_user_dir(G_USER_DIRECTORY_DOWNLOAD)));
+    gtk_box_append(GTK_BOX(side), place_button(x, "folder-pictures", "Pictures", lh4051_user_dir(G_USER_DIRECTORY_PICTURES)));
+    gtk_box_append(GTK_BOX(side), place_button(x, "folder-music", "Music", lh4051_user_dir(G_USER_DIRECTORY_MUSIC)));
+    gtk_box_append(GTK_BOX(side), place_button(x, "folder-videos", "Videos", lh4051_user_dir(G_USER_DIRECTORY_VIDEOS)));
+    gtk_box_append(GTK_BOX(side), place_button(x, "computer", "Computer", root_dir));
+    g_free(root_dir);
 
-    state->list = GTK_LIST_BOX(gtk_list_box_new());
-    gtk_list_box_set_selection_mode(state->list, GTK_SELECTION_SINGLE);
-    gtk_list_box_set_activate_on_single_click(state->list, FALSE);
-    g_signal_connect(state->list, "row-activated",
-                     G_CALLBACK(explorer_row_activated), state);
-    gtk_widget_set_vexpand(GTK_WIDGET(state->list), TRUE);
-    gtk_box_append(GTK_BOX(right), GTK_WIDGET(state->list));
+    /* phode header */
+    gtk_widget_add_css_class(phode, "lh-phode");
+    x->phode_title = gtk_label_new("");
+    x->phode_sub = gtk_label_new("");
+    gtk_widget_add_css_class(x->phode_title, "lh-phode-title");
+    gtk_widget_add_css_class(x->phode_sub, "lh-phode-sub");
+    gtk_label_set_xalign(GTK_LABEL(x->phode_title), 0);
+    gtk_label_set_xalign(GTK_LABEL(x->phode_sub), 0);
+    gtk_box_append(GTK_BOX(phode), x->phode_title);
+    gtk_box_append(GTK_BOX(phode), x->phode_sub);
+    gtk_box_append(GTK_BOX(right), phode);
 
-    status = gtk_label_new("0 items");
-    gtk_label_set_xalign(GTK_LABEL(status), 0);
-    gtk_widget_add_css_class(status, "lh-status");
-    state->status = status;
-    gtk_box_append(GTK_BOX(right), status);
+    gtk_widget_add_css_class(heads, "lh-colheads");
+    gtk_widget_set_margin_start(heads, 8);
+    gtk_widget_set_margin_end(heads, 8);
+    gtk_box_append(GTK_BOX(heads), column_head(x, "Name", LH4051_FM_SORT_NAME, 0));
+    gtk_box_append(GTK_BOX(heads), column_head(x, "Size", LH4051_FM_SORT_SIZE, COL_SIZE + 8));
+    gtk_box_append(GTK_BOX(heads), column_head(x, "Type", LH4051_FM_SORT_TYPE, COL_TYPE + 8));
+    gtk_box_append(GTK_BOX(heads), column_head(x, "Date Modified", LH4051_FM_SORT_DATE, COL_DATE + 8));
+    gtk_box_append(GTK_BOX(right), heads);
 
-    gtk_paned_set_start_child(GTK_PANED(content), filter);
+    x->list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(x->list, GTK_SELECTION_MULTIPLE);
+    gtk_list_box_set_activate_on_single_click(x->list, FALSE);
+    g_signal_connect(x->list, "row-activated", G_CALLBACK(row_activated), x);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), GTK_WIDGET(x->list));
+    gtk_box_append(GTK_BOX(right), scroll);
+
+    x->status = gtk_label_new("");
+    gtk_widget_add_css_class(x->status, "lh-status");
+    gtk_label_set_xalign(GTK_LABEL(x->status), 0);
+    gtk_box_append(GTK_BOX(right), x->status);
+
+    gtk_paned_set_start_child(GTK_PANED(content), side);
     gtk_paned_set_end_child(GTK_PANED(content), right);
+    gtk_paned_set_position(GTK_PANED(content), 190);
+    gtk_paned_set_shrink_start_child(GTK_PANED(content), FALSE);
+    gtk_widget_set_vexpand(content, TRUE);
     gtk_box_append(GTK_BOX(root), content);
 
-    state->path_entry = path_entry;
-    g_signal_connect(path_entry, "activate", G_CALLBACK(explorer_path_activate), state);
-    g_signal_connect(up, "clicked", G_CALLBACK(explorer_go_up), state);
+    x->window = lh4051_wm_create_window(app, "My Documents", 1000, 680, root);
+    g_object_set_data_full(G_OBJECT(x->window), "lh-explorer", x, (GDestroyNotify)explorer_free);
 
-    /* GTK owns the window; keep state alive for the lifetime of the window. */
-    g_object_set_data_full(G_OBJECT(win), "lh4051-explorer-state", state, (GDestroyNotify)g_free);
+    if (query && *query) gtk_editable_set_text(GTK_EDITABLE(x->search_entry), query);
+    go(x, (path && *path) ? path : g_get_home_dir(), TRUE);
+    gtk_window_present(x->window);
+}
 
-    explorer_load_path(state, state->path);
-    gtk_window_present(win);
+void lh4051_explorer_open(GtkApplication *app, const char *path)
+{
+    lh4051_explorer_open_search(app, path, NULL);
 }
