@@ -141,6 +141,13 @@ endif
 PKGS := gtk4
 DEFS :=
 
+# Windows: GIO's Windows stream classes (gio/gwin32inputstream.h, used by src/winproc.c) live in a
+# separate pkg-config package. (A missing package makes pkg-config print nothing at all, so
+# check-deps verifies it explicitly.)
+ifeq ($(TARGET_OS),windows)
+  PKGS += gio-windows-2.0
+endif
+
 ifneq ($(filter linux bsd,$(TARGET_OS)),)
   ifneq ($(LAYER_SHELL),0)
     HAVE_LAYER_SHELL := $(shell $(PKG_CONFIG) --exists gtk4-layer-shell-0 2>/dev/null && echo 1)
@@ -258,6 +265,13 @@ check-deps:
 	  echo "  MSYS2 UCRT64:  pacman -S mingw-w64-ucrt-x86_64-gtk4 mingw-w64-ucrt-x86_64-toolchain"; \
 	  echo "  MSVC:          set GTK_PREFIX to a gvsbuild GTK4 tree"; \
 	  exit 1; }
+ifeq ($(TARGET_OS),windows)
+	@$(PKG_CONFIG) --exists gio-windows-2.0 || { \
+	  echo "error: gio-windows-2.0 was not found by '$(PKG_CONFIG)' (it ships with GLib on Windows)."; \
+	  echo "  MSYS2:         pacman -S mingw-w64-ucrt-x86_64-glib2   (pacboy: glib2:p)"; \
+	  echo "  MSVC/gvsbuild: GTK_PREFIX must point to a tree that contains lib/pkgconfig/gio-windows-2.0.pc"; \
+	  exit 1; }
+endif
 	@command -v $(GLIB_COMPILE_RESOURCES) >/dev/null 2>&1 || { echo "error: $(GLIB_COMPILE_RESOURCES) not found (package libglib2.0-dev-bin / glib2-devel)."; exit 1; }
 	@command -v $(firstword $(CC)) >/dev/null 2>&1 || { echo "error: compiler '$(firstword $(CC))' not found."; exit 1; }
 ifeq ($(TOOLCHAIN),msvc)
