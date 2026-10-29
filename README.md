@@ -1,12 +1,21 @@
 # LH4051-DE
 
+![LH4051-DE: Longhorn Build 4051 style desktop with sidebar and Start menu](images/screenshot.png)
+
 A GTK4 desktop shell that recreates the look of **Windows "Longhorn" Build 4051** (PDC 2003):
 slate taskbar with a pill-shaped Start button, translucent sidebar (search, analog clock, notes),
 two-column Start menu, Longhorn-framed windows, and an Explorer with the blue "Phode" header.
 
-**Version 0.1.0 — stable release.**
+**Version 0.2.0.dev — development branch (`main`).** The current stable line is **0.1.x (LTS)** on the
+[`stable`](https://github.com/kuznix-code/LH4051-DE/tree/stable) branch. See [docs/BRANCHING.md](docs/BRANCHING.md) for how branches and releases work.
 
-Runs on **Linux** (x86, x64, ARM64), **Windows** (x64, ARM64; MinGW-w64 or MSVC), **macOS** (Intel and Apple Silicon),
+| Branch | Purpose |
+|--------|---------|
+| `main` | 0.2.0.dev — new features and everything in progress |
+| `stable` | 0.1.x LTS — bug fixes and minor features only |
+| `beta` | 0.2.0 betas, created from `main` when needed |
+
+Runs on **Linux** (x86, x64, ARM64), **Windows 7, 8, 8.1, 10 and 11** (x64, ARM64; MinGW-w64 or MSVC), **macOS** (Intel and Apple Silicon),
 and **FreeBSD / OpenBSD / NetBSD / DragonFly** or any other unix-like system with GTK 4.10+ (ELF, Mach-O and PE targets).
 
 ## Install
@@ -20,6 +29,30 @@ Every release ships a **LH4051-DE Installer**:
 | Arch Linux | `make dist-arch` (PKGBUILD for the tagged release) |
 
 Windows x86 is not supported: MSYS2 has no 32-bit GTK 4.
+
+### Updating: LH4051-DE Updater
+`lh4051-de-updater` downloads and runs the right installer for your OS, or builds from source if there is none.
+
+| Mode | Source | Use |
+|------|--------|-----|
+| `stable` (default) | newest GitHub release | `lh4051-de-updater` |
+| `beta` | newest GitHub prerelease | `lh4051-de-updater --mode beta` |
+| `dev` | installer from the latest successful Actions run on `main` (needs a GitHub token: `gh auth login` or `GH_TOKEN`) | `lh4051-de-updater --mode dev` |
+
+* **Windows**: `lh4051-de-updater.cmd` (PowerShell script, installed next to the exe) runs the `.exe` installer. `-Mode beta`, `-Check`, `-Yes`.
+* **macOS**: runs the `.pkg` installer (`LH4051-DE.app/Contents/Resources/lh4051-de-updater`).
+* **Linux, FreeBSD and other unix**: runs the `.run` installer (`lh4051-de-updater [--mode beta] [--check] [--yes] [--prefix DIR]`).
+* **No installer for your OS/architecture** (or `--source`): downloads the source and compiles it. This needs GTK 4.10+
+  development files, a C compiler, GNU Make (`gmake` on BSD) and pkg-config.
+
+The mode can also be set with `LH4051_UPDATE_MODE` or `mode=beta` in `~/.config/lh4051-de/updater.conf`.
+
+### Windows 7, 8 and 8.1
+The executable declares Windows 7/8/8.1 compatibility and the installer accepts Windows 7 SP1 and newer.
+`make win64-legacy` builds with the Windows 7 API level (`WIN_MIN=0x0601`), and `scripts/check-win7.sh` lists any
+imports in the exe or bundled GTK runtime that need a newer Windows. Windows 7 also needs the
+[Universal C Runtime update (KB2999226)](https://support.microsoft.com/kb/2999226) and PowerShell 3.0+ (WMF 5.1) for the updater.
+winget is not available on these systems; the App Store uses Chocolatey or Scoop there.
 
 ## How it runs
 
@@ -97,7 +130,9 @@ At runtime put `C:\gtk\bin` next to the exe or on `PATH`.
   (`%APPDATA%\lh4051-de` on Windows).
 * **App Store**: installed apps plus search/install/remove through the package manager you pick in the drop-down.
   Detected automatically: Windows `winget`, Chocolatey, Scoop; macOS Homebrew, MacPorts; FreeBSD `pkg`, OpenBSD `pkg_add`,
-  NetBSD `pkgin`; Linux apt, dnf, pacman, zypper, apk, xbps, emerge, nix, Flatpak and AppStream. Privileged commands go
+  NetBSD `pkgin`; Linux PackageKit (`pkcon`), apt, dnf, pacman, zypper, apk, xbps, emerge, nix, Snap, Flatpak and AppStream.
+  Search works for every one of them; on Linux PackageKit is tried first and the native package manager is used when
+  PackageKit is missing or finds nothing. Privileged commands go
   through pkexec/doas/sudo and show a live log.
 
 On Windows the shell covers the screen. Press **Alt+F4** on the shell, or use *Start → Turn Off Computer*, to exit;

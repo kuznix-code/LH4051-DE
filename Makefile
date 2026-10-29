@@ -13,6 +13,12 @@ VERSION := $(shell sed -n 's/^\#define LH4051_VERSION "\(.*\)"/\1/p' src/longhor
 # PKG_VERSION names dist artifacts/installers: <VERSION>.<YYYYMMDD>.<commit> for
 # development builds (scripts/pkg-version.sh), plain VERSION for release tags.
 PKG_VERSION ?= $(VERSION)
+# VERSION_NUM is the purely numeric major,minor,patch (e.g. 0,2,0 for "0.2.0.dev"),
+# used for the Windows version resource, which cannot hold "dev"/"beta" suffixes.
+VERSION_NUM := $(shell echo '$(VERSION)' | sed -n 's/^\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1,\2,\3/p')
+ifeq ($(VERSION_NUM),)
+  VERSION_NUM := 0,0,0
+endif
 
 # ---------------------------------------------------------------------------
 # Host / target selection
@@ -50,6 +56,9 @@ CONSOLE ?= 0
 LAYER_SHELL ?= auto
 # WIN_ARCH only names the Windows bundle (x64, arm64).
 WIN_ARCH ?= x64
+# WIN_MIN: lowest Windows version the exe may target (sets _WIN32_WINNT/WINVER). Empty = toolchain
+# default. 0x0601 = Windows 7, 0x0602 = 8, 0x0603 = 8.1. `make win64-legacy` sets it to Windows 7.
+WIN_MIN ?=
 # DIST_ARCH names unix tarballs/installers (default: uname -m).
 DIST_ARCH ?= $(shell uname -m 2>/dev/null | sed 's/amd64/x86_64/;s/aarch64/arm64/')
 
@@ -177,6 +186,9 @@ else
     LDFLAGS_ALL += -Wl,-dead_strip
   endif
   ifeq ($(TARGET_OS),windows)
+    ifneq ($(WIN_MIN),)
+      CFLAGS_ALL += -D_WIN32_WINNT=$(WIN_MIN) -DWINVER=$(WIN_MIN) -DNTDDI_VERSION=$(WIN_MIN)0000
+    endif
     LDFLAGS_ALL += $(if $(filter 1,$(CONSOLE)),,-mwindows)
     PC_LIBS += -lshell32
   endif
@@ -209,7 +221,7 @@ comma := ,
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
-.PHONY: all linux macos bsd win64 msvc run clean distclean check-deps show-config help \
+.PHONY: all linux macos bsd win64 win64-legacy msvc run clean distclean check-deps show-config help \
         install uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
         installer-unix installer-macos installer-win
 
@@ -226,6 +238,10 @@ bsd:
 
 win64:
 	@$(MAKE) --no-print-directory TARGET_OS=windows TOOLCHAIN=mingw all
+
+# Windows 7 / 8 / 8.1 compatible exe (still needs a GTK runtime built for those systems).
+win64-legacy:
+	@$(MAKE) --no-print-directory TARGET_OS=windows TOOLCHAIN=mingw WIN_MIN=0x0601 BUILD=build/windows-legacy all
 
 msvc:
 	@$(MAKE) --no-print-directory TARGET_OS=windows TOOLCHAIN=msvc all
@@ -280,7 +296,7 @@ endif
 
 $(BUILD)/version.h: src/longhorn.h
 	@mkdir -p $(@D)
-	@printf '#define LH_RC_VERSION %s,0\n#define LH_RC_VERSION_STR "%s"\n' "$(subst .,$(comma),$(VERSION))" "$(VERSION)" > $@
+	@printf '#define LH_RC_VERSION %s,0\n#define LH_RC_VERSION_STR "%s"\n' "$(VERSION_NUM)" "$(VERSION)" > $@
 
 ifeq ($(TARGET_OS),windows)
 ifeq ($(TOOLCHAIN),msvc)
@@ -341,13 +357,14 @@ ifeq ($(UNIX_LIKE),)
 else
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/$(NAME),$(BIN))
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-session,scripts/lh4051-de-session)
+	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-updater,scripts/lh4051-de-updater)
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop,$(APPS_OUT))
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop,$(SESSION_DIR)/wayland-sessions/lh4051-de.desktop)
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop,$(SESSION_DIR)/xsessions/lh4051-de.desktop)
 endif
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/lh4051-de-session \
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/lh4051-de-session $(DESTDIR)$(PREFIX)/bin/lh4051-de-updater \
 	  $(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop \
 	  $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop $(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop
 
@@ -371,6 +388,7 @@ dist-macos:
 	@rm -rf $(APP_DIR) && mkdir -p $(APP_DIR)/Contents/MacOS $(APP_DIR)/Contents/Resources
 	@cp build/macos-clang/$(NAME) $(APP_DIR)/Contents/MacOS/$(NAME)-bin
 	@cp scripts/macos-launcher.sh $(APP_DIR)/Contents/MacOS/LH4051-DE && chmod 755 $(APP_DIR)/Contents/MacOS/LH4051-DE
+	@cp scripts/lh4051-de-updater $(APP_DIR)/Contents/Resources/lh4051-de-updater && chmod 755 $(APP_DIR)/Contents/Resources/lh4051-de-updater
 	@sed -e 's|@version@|$(PKG_VERSION)|g' macos/Info.plist.in > $(APP_DIR)/Contents/Info.plist
 	@cd dist && ditto -c -k --keepParent LH4051-DE.app $(NAME)-$(PKG_VERSION)-macos-$(DIST_ARCH).zip 2>/dev/null || \
 	  (cd dist && zip -qr $(NAME)-$(PKG_VERSION)-macos-$(DIST_ARCH).zip LH4051-DE.app)
@@ -419,6 +437,7 @@ help:
 	@echo "  make macos           macOS (Intel or Apple Silicon, clang + Homebrew GTK4)"
 	@echo "  make win64           MinGW-w64 build -> build/windows-mingw/lh4051-de.exe"
 	@echo "                       (MSYS2 MINGW64 shell, or cross: apt install gcc-mingw-w64-x86-64 + MinGW GTK4)"
+	@echo "  make win64-legacy    MinGW-w64 build targeting Windows 7/8/8.1 (WIN_MIN=0x0601)"
 	@echo "  make msvc            MSVC build; needs GTK_PREFIX=<gvsbuild tree> and a VS developer prompt"
 	@echo "  make run [ARGS=-w]   build and run"
 	@echo "  make install         install to PREFIX (default /usr/local; DESTDIR supported)"
