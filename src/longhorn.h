@@ -3,7 +3,7 @@
 
 #include <gtk/gtk.h>
 
-#define LH4051_VERSION "0.1.0"
+#define LH4051_VERSION "0.2.0.dev"
 #define LH4051_RES "/org/kuznix/lh4051de/"
 #define LH4051_PANEL_HEIGHT 40
 #define LH4051_SIDEBAR_WIDTH 240
@@ -66,8 +66,10 @@ void lh4051_prefs_watch(LHPrefsFunc func, gpointer user_data);
 /* shell widgets */
 GtkWidget *lh4051_desktop_new(GtkApplication *app);
 void lh4051_desktop_refresh(void);
+void lh4051_desktop_set_sidebar_inset(int px, gboolean animate);
 GtkWidget *lh4051_panel_new(GtkApplication *app);
 GtkWidget *lh4051_sidebar_new(GtkApplication *app);
+void lh4051_sidebar_sync_desktop(gboolean animate);
 GtkWidget *lh4051_start_menu_new(GtkApplication *app);
 void lh4051_start_menu_reset(void);
 
