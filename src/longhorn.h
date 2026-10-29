@@ -71,8 +71,10 @@ void lh4051_prefs_watch(LHPrefsFunc func, gpointer user_data);
 /* shell widgets */
 GtkWidget *lh4051_desktop_new(GtkApplication *app);
 void lh4051_desktop_refresh(void);
+void lh4051_desktop_set_sidebar_inset(int px, gboolean animate);
 GtkWidget *lh4051_panel_new(GtkApplication *app);
 GtkWidget *lh4051_sidebar_new(GtkApplication *app);
+void lh4051_sidebar_sync_desktop(gboolean animate);
 GtkWidget *lh4051_start_menu_new(GtkApplication *app);
 void lh4051_start_menu_reset(void);
 
