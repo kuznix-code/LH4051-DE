@@ -1,26 +1,38 @@
 #!/bin/sh
 # LH4051-DE Updater (Linux, macOS, FreeBSD and other unix-like systems)
 #
-#   lh4051-de-updater [--mode stable|beta|dev] [--check] [--yes] [--source] [--prefix DIR]
+#   lh4051-de-updater [--mode MODE] [--check] [--yes] [--force] [--source] [--prefix DIR]
 #
-# Modes (default: stable; also LH4051_UPDATE_MODE or ~/.config/lh4051-de/updater.conf "mode=...")
-#   stable  newest non-prerelease GitHub release (the 0.1.x LTS line and later stable releases)
-#   beta    newest GitHub prerelease (beta branch)
-#   dev     installer built by the latest successful GitHub Actions run on main
-#           (Actions artifacts need authentication: use `gh auth login` or set GH_TOKEN)
+# Modes (default: stable; also LH4051_UPDATE_MODE or "mode=..." in ~/.config/lh4051-de/updater.conf)
+#   stable         newest stable release
+#   beta           newest beta (GitHub prerelease)
+#   lts            newest release of the newest LTS line
+#   lts-0.1        newest release of one LTS line (0.1.x)
+#   lts-0.1.1      one exact release of an LTS line
+#   0.1.1          one exact release (only supported releases, see docs/supported-releases.txt)
+#   dev            build of the latest successful CI run on main:      <version>.YYYYMMDD.<commit>
+#   stable-dev     ... on the stable branch
+#   beta-dev       ... on the beta branch
+#   lts-dev        ... on the lts branch
+#   0.1-dev        ... on the branch that carries release line 0.1
+#
+# Dev builds are CI artifacts, which GitHub only gives to signed-in users: run `gh auth login` or set
+# GH_TOKEN. Without a token the updater builds the branch from source instead.
 #
 # Installer kind per OS:
-#   Linux / FreeBSD / other unix  LH4051-DE-Installer-<ver>-<os>-<arch>.run
+#   Linux / FreeBSD               LH4051-DE-Installer-<ver>-<os>-<arch>.run
 #   macOS                         LH4051-DE-Installer-<ver>-macos-<arch>.pkg
-#   no binary installer for this OS/arch (or --source): download the source and build it.
-#   Needs GTK 4.10+ development files, a C compiler, GNU Make and pkg-config.
+#   any other OS or architecture (or --source): download the source and build it.
+#   That needs GTK 4.10+ development files, a C compiler, GNU Make and pkg-config.
 set -eu
 
 REPO="kuznix-code/LH4051-DE"
 API="${LH4051_API:-https://api.github.com/repos/$REPO}"
+RAW="${LH4051_RAW:-https://raw.githubusercontent.com/$REPO}"
 MODE=""
 CHECK=0
 YES=0
+FORCE=0
 FORCE_SOURCE=0
 PREFIX=""
 
@@ -29,88 +41,104 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-usage() {
-    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
-    exit 0
-}
+usage() { sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --mode)    [ $# -ge 2 ] || die "--mode needs a value"; MODE="$2"; shift ;;
-        --mode=*)  MODE="${1#--mode=}" ;;
-        --check)   CHECK=1 ;;
-        -y|--yes)  YES=1 ;;
-        --source)  FORCE_SOURCE=1 ;;
-        --prefix)  [ $# -ge 2 ] || die "--prefix needs a value"; PREFIX="$2"; shift ;;
+        --mode)     [ $# -ge 2 ] || die "--mode needs a value"; MODE="$2"; shift ;;
+        --mode=*)   MODE="${1#--mode=}" ;;
+        --check)    CHECK=1 ;;
+        -y|--yes)   YES=1 ;;
+        -f|--force) FORCE=1 ;;
+        --source)   FORCE_SOURCE=1 ;;
+        --prefix)   [ $# -ge 2 ] || die "--prefix needs a value"; PREFIX="$2"; shift ;;
         --prefix=*) PREFIX="${1#--prefix=}" ;;
-        -h|--help) usage ;;
+        -h|--help)  usage ;;
         *) die "unknown option: $1 (try --help)" ;;
     esac
     shift
 done
 
-# ---------------------------------------------------------------- mode
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}/lh4051-de/updater.conf"
 if [ -z "$MODE" ] && [ -n "${LH4051_UPDATE_MODE:-}" ]; then MODE="$LH4051_UPDATE_MODE"; fi
 if [ -z "$MODE" ] && [ -f "$CONF" ]; then
-    MODE="$(sed -n 's/^[[:space:]]*mode[[:space:]]*=[[:space:]]*\([a-z]*\).*/\1/p' "$CONF" | head -n 1)"
+    MODE="$(sed -n 's/^[[:space:]]*mode[[:space:]]*=[[:space:]]*\([A-Za-z0-9.-]*\).*/\1/p' "$CONF" | head -n 1)"
 fi
 [ -n "$MODE" ] || MODE=stable
-case "$MODE" in stable|beta|dev) ;; *) die "unknown mode '$MODE' (use stable, beta or dev)" ;; esac
 
 # ---------------------------------------------------------------- platform
 OS_RAW="$(uname -s)"
 case "$OS_RAW" in
-    Linux)     OS=linux ;;
-    Darwin)    OS=macos ;;
-    FreeBSD)   OS=bsd ;;
+    Linux)   OS=linux ;;
+    Darwin)  OS=macos ;;
+    FreeBSD) OS=bsd ;;
     OpenBSD|NetBSD|DragonFly|MidnightBSD) OS=bsd ;;
-    *)         OS=unix ;;
+    CYGWIN*|MINGW*|MSYS*) die "this is the unix updater; on Windows use lh4051-de-updater.cmd" ;;
+    *)       OS=unix ;;
 esac
 ARCH="$(uname -m | sed 's/amd64/x86_64/;s/aarch64/arm64/')"
-# Installer file names use the TARGET_OS the build used: FreeBSD CI builds "bsd".
-ASSET_OS="$OS"
-case "$OS_RAW" in
-    CYGWIN*|MINGW*|MSYS*) die "this is the unix updater; on Windows run lh4051-de-updater.exe / lh4051-de-updater.ps1" ;;
-esac
+# CI publishes installers for Linux, macOS and FreeBSD only; everything else compiles from source.
+BINARY_OK=0
+case "$OS_RAW" in Linux|Darwin|FreeBSD) BINARY_OK=1 ;; esac
 
 # ---------------------------------------------------------------- helpers
-fetch() { # fetch URL OUTFILE [auth]
-    url="$1"; out="$2"; auth="${3:-}"
+TMP="$(mktemp -d 2>/dev/null || mktemp -d -t lh4051)"
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+if [ -z "$TOKEN" ] && have gh; then TOKEN="$(gh auth token 2>/dev/null || true)"; fi
+
+fetch() { # fetch URL OUTFILE   (the token is only sent to the GitHub API)
+    url="$1"; out="$2"; auth=""
+    case "$url" in "$API"*) auth="$TOKEN" ;; esac
     if have curl; then
         if [ -n "$auth" ]; then curl -fsSL -H "Authorization: Bearer $auth" -H "Accept: application/vnd.github+json" -o "$out" "$url"
         else curl -fsSL -H "Accept: application/vnd.github+json" -o "$out" "$url"; fi
     elif have wget; then
         if [ -n "$auth" ]; then wget -q --header="Authorization: Bearer $auth" -O "$out" "$url"
         else wget -q -O "$out" "$url"; fi
-    elif have fetch && [ "$OS_RAW" = FreeBSD ]; then
+    elif [ "$OS_RAW" = FreeBSD ]; then
         /usr/bin/fetch -q -o "$out" "$url"
     else
         die "need curl or wget to download updates"
     fi
 }
 
-# json_get FILE JQ_EXPR PYTHON_EXPR  -> prints one value per line
+# json_get FILE JQ_EXPR PYTHON_EXPR -> one value per line
 json_get() {
     if have jq; then jq -r "$2" "$1"
     elif have python3; then python3 -c "import json,sys; d=json.load(open(sys.argv[1])); r=($3); [print(x) for x in (r if isinstance(r,list) else [r]) if x is not None]" "$1"
-    else die "beta/dev modes and release lookup need jq or python3 to read GitHub's answers"; fi
+    else die "release lookup needs jq or python3 to read GitHub's answers"; fi
 }
 
-TMP="$(mktemp -d 2>/dev/null || mktemp -d -t lh4051)"
-trap 'rm -rf "$TMP"' EXIT INT TERM
+safe_ref() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._/+-]+$' || die "unsafe name from GitHub: $1"; }
 
-version_of_installed() {
-    if have lh4051-de; then lh4051-de --version 2>/dev/null | sed -n 's/^LH4051-DE //p' | head -n 1; fi
+# vcmp A B -> prints -1, 0 or 1. Numbers compare numerically; dev < alpha < beta < rc < (release) < more numbers;
+# a non-numeric token such as a commit hash ends the comparison.
+vcmp() {
+    awk -v a="${1#v}" -v b="${2#v}" '
+    function val(t) {
+        if (t == "") return 0
+        if (t == "dev") return -4
+        if (t == "alpha") return -3
+        if (t == "beta") return -2
+        if (t == "rc") return -1
+        if (t ~ /^[0-9]+$/) return t + 0
+        return "stop"
+    }
+    BEGIN {
+        na = split(a, A, /[.-]/); nb = split(b, B, /[.-]/); n = (na > nb) ? na : nb
+        for (i = 1; i <= n; i++) {
+            x = val(A[i]); y = val(B[i])
+            if (x == "stop" || y == "stop") { print 0; exit }
+            if (x < y) { print -1; exit }
+            if (x > y) { print 1; exit }
+        }
+        print 0
+    }'
 }
 
-# Compare dotted versions: returns 0 if $1 is newer than $2. Suffixes (.dev, -beta.1) sort before the release.
-is_newer() {
-    [ "$1" != "$2" ] || return 1
-    a="$1"; b="$2"
-    first="$(printf '%s\n%s\n' "$a" "$b" | sort -V 2>/dev/null | head -n 1)" || first=""
-    [ -n "$first" ] && [ "$first" = "$b" ]
-}
+line_of() { printf '%s' "${1#v}" | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p'; }
 
 confirm() {
     [ "$YES" = 1 ] && return 0
@@ -121,79 +149,211 @@ confirm() {
     return 0
 }
 
-# ---------------------------------------------------------------- what is installed / available
-INSTALLED="$(version_of_installed || true)"
-say "LH4051-DE Updater  (mode: $MODE, $OS_RAW/$ARCH)"
-say "Installed version: ${INSTALLED:-none found}"
+# ---------------------------------------------------------------- installed version
+# Prints the installed version (e.g. 0.1.1 or 0.2.0.dev.20261029.abc1234), or nothing.
+installed_version() {
+    for p in ${PREFIX:+"$PREFIX"} /usr/local /usr /opt/local /opt/homebrew "$HOME/.local"; do
+        if [ -f "$p/share/lh4051-de/version" ]; then
+            v="$(head -n 1 "$p/share/lh4051-de/version" | tr -d '[:space:]')"
+            [ -n "$v" ] && { printf '%s\n' "$v"; return 0; }
+        fi
+    done
+    if [ "$OS" = macos ]; then
+        for app in /Applications/LH4051-DE.app "$HOME/Applications/LH4051-DE.app"; do
+            if [ -f "$app/Contents/Info.plist" ]; then
+                v="$(defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
+                [ -z "$v" ] && have /usr/libexec/PlistBuddy && v="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)"
+                [ -n "$v" ] && { printf '%s\n' "$v"; return 0; }
+            fi
+        done
+    fi
+    for exe in "$(command -v lh4051-de 2>/dev/null || true)" ${PREFIX:+"$PREFIX/bin/lh4051-de"} \
+               /usr/local/bin/lh4051-de /usr/bin/lh4051-de /opt/homebrew/bin/lh4051-de "$HOME/.local/bin/lh4051-de"; do
+        [ -n "$exe" ] && [ -x "$exe" ] || continue
+        v="$("$exe" --version 2>/dev/null | sed -n 's/^LH4051-DE //p' | head -n 1)"
+        [ -n "$v" ] && { printf '%s\n' "$v"; return 0; }
+    done
+    return 0
+}
 
-TAG=""        # release tag (stable/beta) or run id (dev)
-VERSION=""    # version string of the update
-ASSET_URL=""  # installer download URL
-SRC_URL=""    # source archive URL
-TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-if [ -z "$TOKEN" ] && have gh; then TOKEN="$(gh auth token 2>/dev/null || true)"; fi
+# ---------------------------------------------------------------- supported release lines
+load_supported() {
+    S="$TMP/supported.txt"
+    if ! fetch "$RAW/main/docs/supported-releases.txt" "$S" 2>/dev/null || [ ! -s "$S" ]; then
+        warn "could not read the supported-release list; using built-in defaults"
+        printf '0.2 dev main\n0.1 stable,lts stable\n' > "$S"
+    fi
+    grep -v '^[[:space:]]*#' "$S" | grep -v '^[[:space:]]*$' > "$S.clean" || : > "$S.clean"
+    S="$S.clean"
+}
+# lines_with CHANNEL -> release lines that have the channel
+lines_with() { awk -v c="$1" '{ n = split($2, ch, ","); for (i = 1; i <= n; i++) if (ch[i] == c) print $1 }' "$S"; }
+# branch_of_channel CHANNEL / branch_of_line LINE
+branch_of_channel() { awk -v c="$1" '{ n = split($2, ch, ","); for (i = 1; i <= n; i++) if (ch[i] == c) { print $3; exit } }' "$S"; }
+branch_of_line() { awk -v l="$1" '$1 == l { print $3; exit }' "$S"; }
+line_has() { awk -v l="$1" -v c="$2" '$1 == l { n = split($2, ch, ","); for (i = 1; i <= n; i++) if (ch[i] == c) found = 1 } END { exit !found }' "$S"; }
+line_supported() { line_has "$1" stable || line_has "$1" lts; }
 
-want_asset_regex() {
+# ---------------------------------------------------------------- mode
+version_like() { printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?(\.x)?(-[A-Za-z0-9.]+)?$'; }
+is_line_arg()  { printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+(\.x)?$'; }
+
+KIND=""; CHANNEL=""; WANT_LINE=""; WANT_EXACT=""; BRANCH=""
+parse_mode() {
+    case "$MODE" in
+        stable|beta|lts) KIND=release; CHANNEL="$MODE" ;;
+        dev)             KIND=branch;  CHANNEL=dev ;;
+        stable-dev|beta-dev|lts-dev) KIND=branch; CHANNEL="${MODE%-dev}" ;;
+        lts-*)
+            rest="${MODE#lts-}"
+            if is_line_arg "$rest"; then KIND=release; CHANNEL=lts; WANT_LINE="$(line_of "$rest")"
+            elif version_like "$rest"; then KIND=exact; CHANNEL=lts; WANT_EXACT="$rest"
+            else die "unknown mode '$MODE'"; fi ;;
+        *-dev)
+            rest="${MODE%-dev}"
+            is_line_arg "$rest" || die "unknown mode '$MODE'"
+            KIND=branch; WANT_LINE="$(line_of "$rest")" ;;
+        *)
+            version_like "$MODE" || die "unknown mode '$MODE' (stable, beta, lts, lts-0.1, 0.1.1, dev, stable-dev, beta-dev, lts-dev, 0.1-dev)"
+            KIND=exact; WANT_EXACT="$MODE" ;;
+    esac
+}
+
+# ---------------------------------------------------------------- lookups
+TAG=""; VERSION=""; ASSET_URL=""; SRC_URL=""; SRC_NOTE=""
+
+asset_regex() {
     case "$OS" in
         macos) printf 'LH4051-DE-Installer-.*-macos-%s\\.pkg$' "$ARCH" ;;
-        *)     printf 'LH4051-DE-Installer-.*-%s-%s\\.run$' "$ASSET_OS" "$ARCH" ;;
+        *)     printf 'LH4051-DE-Installer-.*-%s-%s\\.run$' "$OS" "$ARCH" ;;
     esac
 }
 
 lookup_release() {
-    case "$MODE" in
-        stable) fetch "$API/releases/latest" "$TMP/rel.json" "$TOKEN" || die "could not reach GitHub (releases/latest)"
-                TAG="$(json_get "$TMP/rel.json" '.tag_name' 'd["tag_name"]' | head -n 1)"
-                JQ_ASSETS='.assets[].browser_download_url'
-                PY_ASSETS='[a["browser_download_url"] for a in d["assets"]]' ;;
-        beta)   fetch "$API/releases?per_page=30" "$TMP/rel.json" "$TOKEN" || die "could not reach GitHub (releases)"
-                TAG="$(json_get "$TMP/rel.json" '[.[]|select(.prerelease and (.draft|not))][0].tag_name // empty' \
-                       '[r["tag_name"] for r in d if r.get("prerelease") and not r.get("draft")][:1]' | head -n 1)"
-                JQ_ASSETS='[.[]|select(.prerelease and (.draft|not))][0].assets[].browser_download_url'
-                PY_ASSETS='[a["browser_download_url"] for r in d if r.get("prerelease") and not r.get("draft") for a in r["assets"]][:20]' ;;
-    esac
-    [ -n "$TAG" ] || die "no $MODE release has been published yet"
-    VERSION="${TAG#v}"
-    json_get "$TMP/rel.json" "$JQ_ASSETS" "$PY_ASSETS" > "$TMP/assets.txt" 2>/dev/null || : > "$TMP/assets.txt"
-    ASSET_URL="$(grep -E "$(want_asset_regex)" "$TMP/assets.txt" | head -n 1 || true)"
+    fetch "$API/releases?per_page=100" "$TMP/rel.json" || die "could not reach GitHub (releases)"
+    json_get "$TMP/rel.json" '.[]|select(.draft|not)|[.tag_name,(.prerelease|tostring)]|@tsv' \
+        '["%s\t%s" % (r["tag_name"], str(r.get("prerelease", False)).lower()) for r in d if not r.get("draft")]' > "$TMP/tags.tsv"
+    best=""
+    while IFS="$(printf '\t')" read -r tag pre; do
+        [ -n "$tag" ] || continue
+        line="$(line_of "$tag")"; [ -n "$line" ] || continue
+        case "$KIND:$CHANNEL" in
+            exact:*)
+                [ "${tag#v}" = "${WANT_EXACT#v}" ] || continue ;;
+            release:beta)
+                [ "$pre" = true ] || continue ;;
+            release:stable)
+                [ "$pre" = false ] || continue
+                line_has "$line" stable || continue ;;
+            release:lts)
+                [ "$pre" = false ] || continue
+                line_has "$line" lts || continue
+                [ -z "$WANT_LINE" ] || [ "$line" = "$WANT_LINE" ] || continue ;;
+        esac
+        if [ -z "$best" ] || [ "$(vcmp "$tag" "$best")" = 1 ]; then best="$tag"; bestpre="$pre"; fi
+    done < "$TMP/tags.tsv"
+
+    if [ -z "$best" ]; then
+        case "$KIND:$CHANNEL" in
+            exact:*) die "release $WANT_EXACT does not exist" ;;
+            release:lts) die "no LTS release found${WANT_LINE:+ for line $WANT_LINE}; LTS lines: $(lines_with lts | tr '\n' ' ')" ;;
+            *) die "no $CHANNEL release has been published yet" ;;
+        esac
+    fi
+    line="$(line_of "$best")"
+    if [ "$KIND" = exact ]; then
+        # only supported releases can be installed by version
+        if [ "$bestpre" = true ]; then line_has "$line" beta || line_supported "$line" || die "release $best is not supported (line $line)"
+        else line_supported "$line" || die "release $best is not supported: line $line is not a stable or LTS line (supported lines: $( { lines_with stable; lines_with lts; } | sort -u | tr '\n' ' '))"; fi
+        if [ "$CHANNEL" = lts ]; then line_has "$line" lts || die "release $best is not part of an LTS line"; fi
+    fi
+    if [ "$KIND" = release ] && [ "$CHANNEL" = lts ] && [ -n "$WANT_LINE" ]; then
+        line_has "$WANT_LINE" lts || die "$WANT_LINE is not an LTS line (LTS lines: $(lines_with lts | tr '\n' ' '))"
+    fi
+    TAG="$best"; safe_ref "$TAG"; VERSION="${TAG#v}"
+    json_get "$TMP/rel.json" ".[]|select(.tag_name==\"$TAG\")|.assets[].browser_download_url" \
+        "[a['browser_download_url'] for r in d if r['tag_name']=='$TAG' for a in r['assets']]" > "$TMP/assets.txt" 2>/dev/null || : > "$TMP/assets.txt"
+    ASSET_URL="$(grep -E "$(asset_regex)" "$TMP/assets.txt" | head -n 1 || true)"
     SRC_URL="https://github.com/$REPO/archive/refs/tags/$TAG.tar.gz"
 }
 
-lookup_dev() {
-    [ -n "$TOKEN" ] || warn "dev mode downloads GitHub Actions artifacts, which require a token (gh auth login, or GH_TOKEN)."
-    fetch "$API/actions/runs?branch=main&status=success&per_page=1" "$TMP/runs.json" "$TOKEN" || die "could not reach GitHub (actions/runs)"
+lookup_branch() {
+    if [ -n "$WANT_LINE" ]; then
+        BRANCH="$(branch_of_line "$WANT_LINE")"
+        [ -n "$BRANCH" ] || die "release line $WANT_LINE is not listed in supported-releases.txt"
+    else
+        BRANCH="$(branch_of_channel "$CHANNEL")"
+        if [ -z "$BRANCH" ]; then
+            case "$CHANNEL" in dev) BRANCH=main ;; *) BRANCH="$CHANNEL" ;; esac
+        fi
+    fi
+    safe_ref "$BRANCH"
+    fetch "$API/actions/runs?branch=$BRANCH&status=success&per_page=1" "$TMP/runs.json" || die "could not reach GitHub (actions/runs)"
     TAG="$(json_get "$TMP/runs.json" '.workflow_runs[0].id // empty' '[str(r["id"]) for r in d["workflow_runs"]][:1]' | head -n 1)"
-    [ -n "$TAG" ] || die "no successful Actions run found on main"
-    SHA="$(json_get "$TMP/runs.json" '.workflow_runs[0].head_sha[0:7]' '[r["head_sha"][:7] for r in d["workflow_runs"]][:1]' | head -n 1)"
-    VERSION="dev-$SHA"
-    fetch "$API/actions/runs/$TAG/artifacts" "$TMP/arts.json" "$TOKEN" || die "could not list artifacts of run $TAG"
-    case "$OS" in
-        macos) ART="lh4051-de-macos-$ARCH" ;;
-        *)     ART="lh4051-de-$OS-$ARCH" ;;
+    SHA="$(json_get "$TMP/runs.json" '.workflow_runs[0].head_sha // empty' '[r["head_sha"] for r in d["workflow_runs"]][:1]' | head -n 1)"
+    [ -n "$TAG" ] && [ -n "$SHA" ] || die "branch '$BRANCH' has no successful build yet"
+    safe_ref "$SHA"
+
+    # <version>.YYYYMMDD.<commit>: version from the source at that commit, date = commit date (UTC)
+    BASE=""
+    if fetch "$RAW/$SHA/src/longhorn.h" "$TMP/longhorn.h" 2>/dev/null; then
+        BASE="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' "$TMP/longhorn.h" | head -n 1)"
+    fi
+    DAY=""
+    if fetch "$API/commits/$SHA" "$TMP/commit.json" 2>/dev/null; then
+        DAY="$(json_get "$TMP/commit.json" '.commit.committer.date // empty' '[d["commit"]["committer"]["date"]]' | head -n 1 | cut -c1-10 | tr -d '-')"
+    fi
+    [ -n "$BASE" ] && [ -n "$DAY" ] || die "could not work out the version of build $SHA on $BRANCH"
+    VERSION="$BASE.$DAY.$(printf '%s' "$SHA" | cut -c1-7)"
+
+    SRC_URL="https://github.com/$REPO/archive/$SHA.tar.gz"
+    if [ -z "$TOKEN" ]; then
+        SRC_NOTE="CI builds need a GitHub token (gh auth login, or GH_TOKEN); building $BRANCH from source instead."
+        return 0
+    fi
+    fetch "$API/actions/runs/$TAG/artifacts" "$TMP/arts.json" || die "could not list the artifacts of run $TAG"
+    case "$OS_RAW" in
+        Linux)   case "$ARCH" in x86_64) a=x64 ;; i?86) a=x86 ;; *) a="$ARCH" ;; esac; ART="lh4051-de-linux-$a" ;;
+        Darwin)  ART="lh4051-de-macos-$ARCH" ;;
+        FreeBSD) ART="lh4051-de-freebsd-$([ "$ARCH" = x86_64 ] && echo x64 || echo "$ARCH")" ;;
+        *)       ART="" ;;
     esac
-    [ "$OS" = bsd ] && [ "$OS_RAW" = FreeBSD ] && ART="lh4051-de-freebsd-$( [ "$ARCH" = x86_64 ] && echo x64 || echo "$ARCH" )"
-    [ "$OS" = linux ] && [ "$ARCH" = x86_64 ] && ART="lh4051-de-linux-x64"
-    ASSET_URL="$(json_get "$TMP/arts.json" ".artifacts[]|select(.name==\"$ART\" and (.expired|not))|.archive_download_url" \
-                 "[a['archive_download_url'] for a in d['artifacts'] if a['name']=='$ART' and not a.get('expired')]" | head -n 1 || true)"
-    SRC_URL="https://github.com/$REPO/archive/refs/heads/main.tar.gz"
+    if [ "$BINARY_OK" = 1 ] && [ -n "$ART" ]; then
+        ASSET_URL="$(json_get "$TMP/arts.json" ".artifacts[]|select(.name==\"$ART\" and (.expired|not))|.archive_download_url" \
+                     "[a['archive_download_url'] for a in d['artifacts'] if a['name']=='$ART' and not a.get('expired')]" | head -n 1 || true)"
+    fi
 }
 
-case "$MODE" in dev) lookup_dev ;; *) lookup_release ;; esac
-say "Available ($MODE): ${VERSION}"
+# ---------------------------------------------------------------- go
+parse_mode
+load_supported
+INSTALLED="$(installed_version || true)"
+say "LH4051-DE Updater  (mode: $MODE, $OS_RAW/$ARCH)"
+say "Installed version: ${INSTALLED:-none found}"
 
-if [ "$MODE" != dev ] && [ -n "$INSTALLED" ] && ! is_newer "$VERSION" "$INSTALLED"; then
-    say "LH4051-DE is up to date."
+case "$KIND" in branch) lookup_branch ;; *) lookup_release ;; esac
+say "Available ($MODE): $VERSION${BRANCH:+  [branch $BRANCH]}"
+
+DOWNGRADE=0
+if [ -n "$INSTALLED" ] && [ "$FORCE" != 1 ]; then
+    case "$(vcmp "$VERSION" "$INSTALLED")" in
+        0) say "LH4051-DE is up to date."; exit 0 ;;
+        -1) if [ "$KIND" = exact ]; then DOWNGRADE=1
+            else say "Installed version $INSTALLED is newer than $VERSION ($MODE). Use --force to switch anyway."; exit 0; fi ;;
+    esac
+fi
+if [ "$CHECK" = 1 ]; then
+    [ "$DOWNGRADE" = 1 ] && say "A different version is available: ${INSTALLED:-none} -> $VERSION" || say "An update is available: ${INSTALLED:-none} -> $VERSION"
     exit 0
 fi
-[ "$CHECK" = 1 ] && { say "An update is available: ${INSTALLED:-none} -> $VERSION"; exit 0; }
 
-confirm "Install LH4051-DE $VERSION?" || { say "Cancelled."; exit 1; }
+confirm "$([ "$DOWNGRADE" = 1 ] && echo "Replace $INSTALLED with" || echo "Install") LH4051-DE $VERSION?" || { say "Cancelled."; exit 1; }
 
 # ---------------------------------------------------------------- binary installer
 install_binary() {
-    if [ "$MODE" = dev ]; then
-        have unzip || die "unzip is needed to unpack the Actions artifact"
-        fetch "$ASSET_URL" "$TMP/artifact.zip" "$TOKEN" || die "artifact download failed (is your token valid?)"
+    if [ "$KIND" = branch ]; then
+        have unzip || die "unzip is needed to unpack the CI artifact"
+        fetch "$ASSET_URL" "$TMP/artifact.zip" || die "artifact download failed (is your GitHub token valid?)"
         mkdir -p "$TMP/art" && unzip -q "$TMP/artifact.zip" -d "$TMP/art"
         file="$(find "$TMP/art" -name 'LH4051-DE-Installer-*' | head -n 1)"
         [ -n "$file" ] || die "the artifact contains no installer"
@@ -216,6 +376,7 @@ install_binary() {
 
 # ---------------------------------------------------------------- source build
 install_source() {
+    [ -n "$SRC_NOTE" ] && say "$SRC_NOTE"
     say "Building from source ($OS_RAW/$ARCH)."
     have tar || die "tar is required"
     CCBIN=""
@@ -226,27 +387,29 @@ install_source() {
         have "$m" && "$m" --version 2>/dev/null | grep -q "GNU Make" && { MAKEBIN="$m"; break; }
     done
     [ -n "$MAKEBIN" ] || die "GNU Make is required (install gmake)"
-    have pkg-config || have pkgconf || die "pkg-config (or pkgconf) is required"
-    PKGCFG="pkg-config"; have pkg-config || PKGCFG="pkgconf"
+    PKGCFG=""
+    for c in pkg-config pkgconf; do have "$c" && { PKGCFG="$c"; break; }; done
+    [ -n "$PKGCFG" ] || die "pkg-config (or pkgconf) is required"
     "$PKGCFG" --atleast-version=4.10 gtk4 2>/dev/null || die "GTK 4.10 or newer development files are required (found: $("$PKGCFG" --modversion gtk4 2>/dev/null || echo none))"
     have glib-compile-resources || die "glib-compile-resources is required (glib development tools)"
 
-    fetch "$SRC_URL" "$TMP/src.tar.gz" "$TOKEN" || die "source download failed"
+    fetch "$SRC_URL" "$TMP/src.tar.gz" || die "source download failed"
     mkdir -p "$TMP/src" && tar -xzf "$TMP/src.tar.gz" -C "$TMP/src" --strip-components=1
     (
         cd "$TMP/src"
-        "$MAKEBIN" CC="$CCBIN" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+        # Name the build like the CI artifacts do (<version>.YYYYMMDD.<commit>) so the next run can compare.
+        "$MAKEBIN" CC="$CCBIN" PKG_VERSION="$VERSION" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
         SUDO=""
         TARGET="${PREFIX:-/usr/local}"
         if [ "$(id -u)" != 0 ] && { [ ! -d "$TARGET" ] || [ ! -w "$TARGET" ]; }; then
             for c in sudo doas; do have "$c" && { SUDO="$c"; break; }; done
         fi
-        $SUDO "$MAKEBIN" CC="$CCBIN" PREFIX="$TARGET" install
+        $SUDO "$MAKEBIN" CC="$CCBIN" PKG_VERSION="$VERSION" PREFIX="$TARGET" install
     )
 }
 
-if [ "$FORCE_SOURCE" = 1 ] || [ -z "$ASSET_URL" ]; then
-    [ "$FORCE_SOURCE" = 1 ] || say "No installer for $OS/$ARCH in this $MODE build."
+if [ "$FORCE_SOURCE" = 1 ] || [ "$BINARY_OK" != 1 ] || [ -z "$ASSET_URL" ]; then
+    [ "$FORCE_SOURCE" = 1 ] || [ -n "$SRC_NOTE" ] || say "No installer for $OS_RAW/$ARCH in this build."
     install_source
 else
     install_binary

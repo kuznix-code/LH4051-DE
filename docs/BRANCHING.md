@@ -33,3 +33,10 @@ main ──────────────●──────────
 
 `LH4051_VERSION` in `src/longhorn.h` is the single source of truth: `0.2.0.dev` on `main`, `0.1.x` on `stable`.
 Build artifacts from untagged commits are named `<VERSION>.<YYYYMMDD>.<commit>`; tagged builds use the tag.
+
+## Supported releases and the updater
+
+`docs/supported-releases.txt` (read from `main`) lists every release line, what role it has (`dev`, `beta`, `stable`,
+`lts`, `eol`) and which branch carries it. LH4051-DE Updater uses it to resolve its modes and to decide which exact
+versions may be installed (only lines with the `stable` or `lts` channel). **Update this file whenever a branch changes role**,
+for example when `beta` becomes `stable` or `stable` moves to `lts`.

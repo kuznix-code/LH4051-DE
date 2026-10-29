@@ -200,7 +200,7 @@ endif
 # Sources
 # ---------------------------------------------------------------------------
 SRC := src/main.c src/platform.c src/prefs.c src/theme.c src/desktop.c src/panel.c src/sidebar.c \
-       src/start_menu.c src/settings.c src/explorer.c src/appstore.c \
+       src/start_menu.c src/settings.c src/explorer.c src/appstore.c src/winproc.c \
        src/LH4051-WM/wm.c src/LH4051-FM/fm.c src/LH4051-SESSION/session.c
 OBJS    := $(patsubst %.c,$(BUILD)/%$(OBJEXT),$(SRC))
 RES_C   := $(BUILD)/resources.c
@@ -358,6 +358,7 @@ else
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/$(NAME),$(BIN))
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-session,scripts/lh4051-de-session)
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-updater,scripts/lh4051-de-updater)
+	@mkdir -p "$(DESTDIR)$(PREFIX)/share/lh4051-de" && printf '%s\n' "$(PKG_VERSION)" > "$(DESTDIR)$(PREFIX)/share/lh4051-de/version"
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop,$(APPS_OUT))
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop,$(SESSION_DIR)/wayland-sessions/lh4051-de.desktop)
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop,$(SESSION_DIR)/xsessions/lh4051-de.desktop)
@@ -367,6 +368,8 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/lh4051-de-session $(DESTDIR)$(PREFIX)/bin/lh4051-de-updater \
 	  $(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop \
 	  $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop $(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop
+	rm -f $(DESTDIR)$(PREFIX)/share/lh4051-de/version
+	-rmdir $(DESTDIR)$(PREFIX)/share/lh4051-de 2>/dev/null
 
 # ---------------------------------------------------------------------------
 # Distribution artifacts
