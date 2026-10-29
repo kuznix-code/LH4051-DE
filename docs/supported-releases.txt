@@ -1,0 +1,15 @@
+# Release lines known to LH4051-DE Updater (read from the main branch).
+#
+# <line>  <channels>        <branch>
+#
+# channels (comma separated):
+#   dev      development line, built from <branch> (mode: dev, <line>-dev)
+#   beta     betas of the next release (mode: beta, beta-dev)
+#   stable   current stable line (mode: stable, stable-dev)
+#   lts      long-term support (modes: lts, lts-dev, lts-<line>, exact versions)
+#   eol      no longer supported; exact-version installs are refused
+#
+# A release is *supported* when its line has the stable or lts channel (betas: the beta channel).
+# Update this file on main when a branch changes role (see docs/BRANCHING.md).
+0.2   dev           main
+0.1   stable,lts    stable

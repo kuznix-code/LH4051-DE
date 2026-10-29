@@ -32,17 +32,24 @@ Windows x86 is not supported: MSYS2 has no 32-bit GTK 4.
 
 ### Updating: LH4051-DE Updater
 `lh4051-de-updater` downloads and runs the right installer for your OS, or builds from source if there is none.
+It finds an existing installation itself (version file, macOS app bundle, uninstall entry on Windows) and only installs
+when something newer is available (`--force` / `-Force` overrides).
 
-| Mode | Source | Use |
-|------|--------|-----|
-| `stable` (default) | newest GitHub release | `lh4051-de-updater` |
-| `beta` | newest GitHub prerelease | `lh4051-de-updater --mode beta` |
-| `dev` | installer from the latest successful Actions run on `main` (needs a GitHub token: `gh auth login` or `GH_TOKEN`) | `lh4051-de-updater --mode dev` |
+| Mode | What it installs |
+|------|------------------|
+| `stable` (default) | newest stable release |
+| `beta` | newest beta (GitHub prerelease) |
+| `lts` / `lts-0.1` | newest release of the newest LTS line / of one LTS line |
+| `0.1.1`, `lts-0.1.1` | one exact release, **supported releases only** (see [docs/supported-releases.txt](docs/supported-releases.txt)) |
+| `dev`, `stable-dev`, `beta-dev`, `lts-dev`, `0.1-dev` | latest successful CI build of `main`, `stable`, `beta`, `lts`, or of the branch carrying line 0.1, versioned `<version>.YYYYMMDD.<commit>` |
 
-* **Windows**: `lh4051-de-updater.cmd` (PowerShell script, installed next to the exe) runs the `.exe` installer. `-Mode beta`, `-Check`, `-Yes`.
+CI builds are GitHub Actions artifacts, which need a GitHub token (`gh auth login` or `GH_TOKEN`). Without one the unix
+updater builds that branch from source; on Windows set `GH_TOKEN`. Releases (`stable`, `beta`, `lts`, versions) need no token.
+
+* **Windows**: `lh4051-de-updater.cmd -Mode beta` (`-Check`, `-Yes`, `-Force`) runs the `.exe` installer.
 * **macOS**: runs the `.pkg` installer (`LH4051-DE.app/Contents/Resources/lh4051-de-updater`).
-* **Linux, FreeBSD and other unix**: runs the `.run` installer (`lh4051-de-updater [--mode beta] [--check] [--yes] [--prefix DIR]`).
-* **No installer for your OS/architecture** (or `--source`): downloads the source and compiles it. This needs GTK 4.10+
+* **Linux, FreeBSD**: `lh4051-de-updater [--mode beta] [--check] [--yes] [--force] [--prefix DIR]` runs the `.run` installer.
+* **Any other OS or architecture** (or `--source`): downloads the source and compiles it. This needs GTK 4.10+
   development files, a C compiler, GNU Make (`gmake` on BSD) and pkg-config.
 
 The mode can also be set with `LH4051_UPDATE_MODE` or `mode=beta` in `~/.config/lh4051-de/updater.conf`.
