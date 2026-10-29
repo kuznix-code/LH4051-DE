@@ -24,7 +24,18 @@ typedef enum {
     SEARCH_PIPE,      /* "name|version" */
     SEARCH_FLATPAK,   /* tab separated: application, name, description */
     SEARCH_PORT,      /* tab separated: name, version, categories, description */
-    SEARCH_WINGET     /* column table */
+    SEARCH_WINGET,    /* column table: Name, Id, Version, ... */
+    SEARCH_SCOOP,     /* column table: Name, Version, Source, ... */
+    SEARCH_SNAP,      /* column table: Name, ..., Summary */
+    SEARCH_PACMAN,    /* "repo/name version" + indented summary line */
+    SEARCH_DNF,       /* "name.arch : summary" */
+    SEARCH_ZYPPER,    /* "S | Name | Summary | Type" */
+    SEARCH_APK,       /* "name-1.2-r0 - summary" */
+    SEARCH_XBPS,      /* "[-] name-1.2_1  summary" */
+    SEARCH_PKGIN,     /* "name-1.2nb1  summary" */
+    SEARCH_EMERGE,    /* "*  category/name" + "Description:" line */
+    SEARCH_NIX,       /* "* legacyPackages.<system>.name (version)" + indented summary */
+    SEARCH_PKGKIT     /* pkcon --plain: "Available  name-1.2-1.arch (repo)  summary" */
 } SearchKind;
 
 typedef struct {
@@ -39,32 +50,35 @@ typedef struct {
 } PackageManager;
 
 static const PackageManager PMS[] = {
-    /* Linux */
-    {"PackageKit", "pkcon", OSF_LINUX, FALSE, "pkcon -y install %s", "pkcon -y remove %s", NULL, SEARCH_NONE},
-    {"pacman", "pacman", OSF_LINUX, TRUE, "pacman -S --noconfirm %s", "pacman -R --noconfirm %s", NULL, SEARCH_NONE},
+    /* Linux. PackageKit goes first: when pkcon exists it is the distribution-neutral choice,
+     * and the native package managers below are the fallback when it is missing or fails. */
+    {"PackageKit", "pkcon", OSF_LINUX, FALSE, "pkcon -y install %s", "pkcon -y remove %s", "pkcon -p search name %s", SEARCH_PKGKIT},
+    {"pacman", "pacman", OSF_LINUX, TRUE, "pacman -S --noconfirm %s", "pacman -R --noconfirm %s", "pacman -Ss %s", SEARCH_PACMAN},
     {"APT", "apt-get", OSF_LINUX, TRUE, "apt-get install -y %s", "apt-get remove -y %s", "apt-cache search %s", SEARCH_DASH},
-    {"DNF", "dnf", OSF_LINUX, TRUE, "dnf install -y %s", "dnf remove -y %s", NULL, SEARCH_NONE},
-    {"zypper", "zypper", OSF_LINUX, TRUE, "zypper --non-interactive install %s", "zypper --non-interactive remove %s", NULL, SEARCH_NONE},
-    {"apk", "apk", OSF_LINUX, TRUE, "apk add %s", "apk del %s", NULL, SEARCH_NONE},
-    {"xbps", "xbps-install", OSF_LINUX, TRUE, "xbps-install -y %s", "xbps-remove -y %s", NULL, SEARCH_NONE},
-    {"Portage", "emerge", OSF_LINUX, TRUE, "emerge %s", "emerge --unmerge %s", NULL, SEARCH_NONE},
-    {"Snap", "snap", OSF_LINUX, TRUE, "snap install %s", "snap remove %s", NULL, SEARCH_NONE},
+    {"DNF", "dnf", OSF_LINUX, TRUE, "dnf install -y %s", "dnf remove -y %s", "dnf -q search %s", SEARCH_DNF},
+    {"zypper", "zypper", OSF_LINUX, TRUE, "zypper --non-interactive install %s", "zypper --non-interactive remove %s",
+     "zypper --non-interactive search -t package %s", SEARCH_ZYPPER},
+    {"apk", "apk", OSF_LINUX, TRUE, "apk add %s", "apk del %s", "apk search -v %s", SEARCH_APK},
+    {"xbps", "xbps-install", OSF_LINUX, TRUE, "xbps-install -y %s", "xbps-remove -y %s", "xbps-query -Rs %s", SEARCH_XBPS},
+    {"Portage", "emerge", OSF_LINUX, TRUE, "emerge %s", "emerge --unmerge %s", "emerge --color n --search %s", SEARCH_EMERGE},
+    {"Snap", "snap", OSF_LINUX, TRUE, "snap install %s", "snap remove %s", "snap find %s", SEARCH_SNAP},
     {"Flatpak", "flatpak", OSF_LINUX, FALSE, "flatpak install -y %s", "flatpak uninstall -y %s",
      "flatpak search --columns=application,name,description %s", SEARCH_FLATPAK},
-    {"Nix", "nix", OSF_LINUX | OSF_MACOS, FALSE, "nix profile install nixpkgs#%s", "nix profile remove %s", NULL, SEARCH_NONE},
+    {"Nix", "nix", OSF_LINUX | OSF_MACOS, FALSE, "nix profile install nixpkgs#%s", "nix profile remove %s",
+     "nix --extra-experimental-features nix-command --extra-experimental-features flakes search nixpkgs %s", SEARCH_NIX},
     /* macOS (Homebrew also works on Linux) */
     {"Homebrew", "brew", OSF_MACOS | OSF_LINUX, FALSE, "brew install %s", "brew uninstall %s", "brew search %s", SEARCH_NAMES},
     {"MacPorts", "port", OSF_MACOS, TRUE, "port install %s", "port uninstall %s", "port search --name --line %s", SEARCH_PORT},
     /* BSD */
     {"pkg", "pkg", OSF_BSD, TRUE, "pkg install -y %s", "pkg delete -y %s", "pkg search -q %s", SEARCH_NAMES},
-    {"pkgin", "pkgin", OSF_BSD, TRUE, "pkgin -y install %s", "pkgin -y remove %s", NULL, SEARCH_NONE},
+    {"pkgin", "pkgin", OSF_BSD, TRUE, "pkgin -y install %s", "pkgin -y remove %s", "pkgin search %s", SEARCH_PKGIN},
     {"pkg_add", "pkg_add", OSF_BSD, TRUE, "pkg_add %s", "pkg_delete %s", "pkg_info -Q %s", SEARCH_NAMES},
     /* Windows */
     {"winget", "winget", OSF_WINDOWS, FALSE,
      "winget install --id %s -e --accept-source-agreements --accept-package-agreements",
-     "winget uninstall --id %s -e", "winget search %s --accept-source-agreements", SEARCH_WINGET},
+     "winget uninstall --id %s -e", "winget search %s --source winget --accept-source-agreements", SEARCH_WINGET},
     {"Chocolatey", "choco", OSF_WINDOWS, FALSE, "choco install %s -y", "choco uninstall %s -y", "choco search %s -r", SEARCH_PIPE},
-    {"Scoop", "scoop", OSF_WINDOWS, FALSE, "scoop install %s", "scoop uninstall %s", NULL, SEARCH_NONE},
+    {"Scoop", "scoop", OSF_WINDOWS, FALSE, "scoop install %s", "scoop uninstall %s", "scoop search %s", SEARCH_SCOOP},
 };
 
 static unsigned current_os(void)
@@ -119,12 +133,13 @@ static gboolean needs_escalator_but_missing(const PackageManager *pm)
 #endif
 }
 
-/* Builds a NULL-terminated argv from a template (+ escalator if required). */
-static GPtrArray *build_argv(const PackageManager *pm, const char *tmpl, const char *arg)
+/* Builds a NULL-terminated argv from a template. Install/remove commands get the privilege
+ * escalator when the package manager needs one; read-only searches (escalate == FALSE) never do. */
+static GPtrArray *build_argv(const PackageManager *pm, const char *tmpl, const char *arg, gboolean escalate)
 {
     GPtrArray *a = g_ptr_array_new_with_free_func(g_free);
     char **parts = g_strsplit(tmpl, " ", -1);
-    const char *esc = pm->root ? escalator() : NULL;
+    const char *esc = (escalate && pm->root) ? escalator() : NULL;
     if (esc) g_ptr_array_add(a, g_strdup(esc));
     for (int i = 0; parts[i]; i++) {
         if (!*parts[i]) continue;
@@ -166,6 +181,86 @@ static const PackageManager *current_pm(void)
     if (!detected || !detected->len || !pm_dropdown) return NULL;
     i = gtk_drop_down_get_selected(GTK_DROP_DOWN(pm_dropdown));
     return i < detected->len ? g_ptr_array_index(detected, i) : NULL;
+}
+
+/* ======================================================================
+ * Process launching
+ * ====================================================================== */
+
+#ifdef G_OS_WIN32
+/* cmd.exe fallback for .cmd/.bat shims (scoop, choco). Only used when every argument is made of
+ * characters cmd.exe treats literally, so nothing from a search result can inject a command. */
+static GPtrArray *wrap_in_cmd(GPtrArray *argv)
+{
+    GPtrArray *w = g_ptr_array_new_with_free_func(g_free);
+    g_ptr_array_add(w, g_strdup("cmd.exe"));
+    g_ptr_array_add(w, g_strdup("/d"));
+    g_ptr_array_add(w, g_strdup("/c"));
+    for (guint i = 0; i < argv->len && g_ptr_array_index(argv, i); i++) {
+        const char *a = g_ptr_array_index(argv, i);
+        if (!*a) goto bad;
+        for (const char *c = a; *c; c++)
+            if (!g_ascii_isalnum(*c) && !strchr("._+-:/@#=,\\", *c)) goto bad;
+        g_ptr_array_add(w, g_strdup(a));
+    }
+    g_ptr_array_add(w, NULL);
+    return w;
+bad:
+    g_ptr_array_unref(w);
+    return NULL;
+}
+#endif
+
+/* Starts a package-manager process (argv is NULL-terminated).
+ *
+ * The shell is a GUI-subsystem program on Windows, so it has no valid standard handles, and a
+ * child that inherits them fails with "Failed to execute child process (Bad file descriptor)".
+ * Every standard stream is therefore redirected explicitly: the caller redirects stdout/stderr
+ * through its flags and stdin becomes a pipe that is closed immediately, so the child sees EOF
+ * instead of waiting for input. If the direct launch still fails, retry through cmd.exe. */
+static GSubprocess *spawn_pm(GPtrArray *argv, GSubprocessFlags flags, GError **error)
+{
+#ifdef G_OS_WIN32
+    GError *first = NULL;
+    GSubprocess *p = g_subprocess_newv((const char *const *)argv->pdata, flags | G_SUBPROCESS_FLAGS_STDIN_PIPE, &first);
+    if (!p) {
+        GPtrArray *wrapped = wrap_in_cmd(argv);
+        if (wrapped) {
+            p = g_subprocess_newv((const char *const *)wrapped->pdata, flags | G_SUBPROCESS_FLAGS_STDIN_PIPE, NULL);
+            g_ptr_array_unref(wrapped);
+        }
+    }
+    if (p) {
+        GOutputStream *in = g_subprocess_get_stdin_pipe(p);
+        g_clear_error(&first);
+        if (in) g_output_stream_close(in, NULL, NULL);
+    } else {
+        g_propagate_error(error, first);
+    }
+    return p;
+#else
+    return g_subprocess_newv((const char *const *)argv->pdata, flags, error);
+#endif
+}
+
+/* Command output as valid UTF-8. Windows tools may answer in the console code page. */
+static char *output_to_utf8(GBytes *bytes)
+{
+    gsize len = 0;
+    const char *data = bytes ? g_bytes_get_data(bytes, &len) : NULL;
+    char *text;
+    if (!data || !len) return g_strdup("");
+    text = g_strndup(data, len);
+    if (g_utf8_validate(text, -1, NULL)) return text;
+    {
+        char *converted = g_locale_to_utf8(text, -1, NULL, NULL, NULL);
+        if (converted) { g_free(text); return converted; }
+    }
+    {
+        char *valid = g_utf8_make_valid(text, -1);
+        g_free(text);
+        return valid;
+    }
 }
 
 /* ======================================================================
@@ -311,8 +406,7 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     g_signal_connect(op->window, "destroy", G_CALLBACK(op_destroyed), op);
     gtk_window_present(op->window);
 
-    op->process = g_subprocess_newv((const char *const *)argv->pdata,
-        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error);
+    op->process = spawn_pm(argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error);
     if (!op->process) {
         op_append(op, error ? error->message : "Could not start the command.");
         gtk_label_set_text(GTK_LABEL(op->status), "Could not start the package manager");
@@ -344,7 +438,7 @@ static void confirm_answer(GObject *src, GAsyncResult *res, gpointer data)
     int choice = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(src), res, &error);
     g_clear_error(&error);
     if (choice == 1) {
-        GPtrArray *argv = build_argv(p->pm, p->install ? p->pm->install : p->pm->remove, p->package);
+        GPtrArray *argv = build_argv(p->pm, p->install ? p->pm->install : p->pm->remove, p->package, TRUE);
         char *detail = g_strdup_printf("Package: %s\nPackage manager: %s%s", p->package, p->pm->label,
             g_strcmp0(p->pm->binary, "choco") == 0 ? "\nChocolatey needs an elevated (administrator) session." : "");
         run_logged(p->app, p->install ? "Installing application" : "Uninstalling application", detail, argv);
@@ -378,7 +472,7 @@ static void package_clicked(GtkButton *b, gpointer data)
     if (!pm) {
         show_alert(parent, "No package manager found",
                    lh4051_platform_is_windows()
-                       ? "Install winget (App Installer from the Microsoft Store), Chocolatey or Scoop."
+                       ? "Install Chocolatey or Scoop (winget needs Windows 10 1809 or newer and is not available on Windows 7, 8 and 8.1)."
                        : "No supported package manager was found on this system.");
         return;
     }
@@ -525,40 +619,239 @@ static StoreApp *parse_appstream_block(const char *block)
     return a;
 }
 
-/* winget prints a space-aligned table; find the Id/Version columns from the header. */
-static void parse_winget(const char *out, GPtrArray *res)
+/* ---------- text helpers ---------- */
+
+/* "firefox-120.0_1" -> "firefox". With last == TRUE the version starts at the last "-<digit>"
+ * (xbps, pkgin: name-version); otherwise at the first one (rpm style: name-version-release.arch). */
+static char *strip_version(const char *pkgver, gboolean last)
+{
+    const char *cut = NULL;
+    for (const char *p = pkgver; *p; p++)
+        if (*p == '-' && g_ascii_isdigit(p[1])) { cut = p; if (!last) break; }
+    return cut ? g_strndup(pkgver, (gsize)(cut - pkgver)) : g_strdup(pkgver);
+}
+
+/* apk: "name-1.2.3-r0" -> "name" */
+static char *strip_apk_version(const char *pkgver)
+{
+    char *name = g_strdup(pkgver), *p = strrchr(name, '-');
+    if (p && p[1] == 'r' && g_ascii_isdigit(p[2])) {
+        *p = 0;
+        p = strrchr(name, '-');
+        if (p) *p = 0;
+    }
+    return name;
+}
+
+/* Strips "\r"-separated progress redraws (winget/scoop spinners): keeps what was drawn last. */
+static char *last_redraw(char *line)
+{
+    char *cr = strrchr(line, '\r');
+    if (cr && cr[1]) return cr + 1;
+    if (cr) *cr = 0;
+    return line;
+}
+
+/* ---------- column tables (winget, scoop, snap) ---------- */
+
+/* Character offsets at which columns start in a header: a column begins after two or more
+ * spaces. Works for any language because it never looks at the header words. */
+static GArray *table_columns(const char *header)
+{
+    GArray *cols = g_array_new(FALSE, FALSE, sizeof(glong));
+    glong pos = 0;
+    int spaces = 2;
+    for (const char *p = header; *p; p = g_utf8_next_char(p), pos++) {
+        if (*p == ' ' || *p == '\t') { spaces++; continue; }
+        if (spaces >= 2) g_array_append_val(cols, pos);
+        spaces = 0;
+    }
+    return cols;
+}
+
+static char *table_cell(const char *line, glong len, const GArray *cols, guint i)
+{
+    glong a, b;
+    char *raw;
+    if (i >= cols->len) return g_strdup("");
+    a = g_array_index(cols, glong, i);
+    b = (i + 1 < cols->len) ? g_array_index(cols, glong, i + 1) : len;
+    if (a >= len) return g_strdup("");
+    if (b > len) b = len;
+    raw = g_utf8_substring(line, a, b);
+    g_strstrip(raw);
+    return raw;
+}
+
+static gboolean is_blank(const char *s)
+{
+    for (; *s; s++) if (!g_ascii_isspace(*s)) return FALSE;
+    return TRUE;
+}
+
+static gboolean is_rule_line(const char *line)
+{
+    int dashes = 0;
+    for (const char *p = line; *p; p++) {
+        if (*p == '-') dashes++;
+        else if (*p != ' ') return FALSE;
+    }
+    return dashes >= 3;
+}
+
+static void parse_table(SearchKind kind, const char *out, GPtrArray *res)
 {
     char **lines = g_strsplit(out, "\n", -1);
-    gboolean in_rows = FALSE;
-    gsize id_col = 0, ver_col = 0;
-    const char *header = NULL;
+    GArray *cols = NULL;
+    const char *prev = NULL;
+    char *header = NULL;
 
     for (guint i = 0; lines[i] && res->len < MAX_RESULTS; i++) {
-        char *line = g_strchomp(lines[i]);
-        char *carriage = strrchr(line, '\r');
-        if (carriage) line = carriage + 1;
-        if (!in_rows) {
-            if (g_str_has_prefix(line, "Name")) header = line;
-            if (header && g_str_has_prefix(line, "---")) {
-                const char *id = strstr(header, "Id"), *ver = strstr(header, "Version");
-                if (!id) break;
-                id_col = (gsize)(id - header);
-                ver_col = ver ? (gsize)(ver - header) : strlen(header);
-                in_rows = TRUE;
+        char *line = last_redraw(g_strchomp(lines[i]));
+        glong len;
+        char *name, *id, *summary = NULL;
+
+        if (!cols) {
+            if (kind == SEARCH_SNAP) { /* snap prints no rule line: the first line is the header */
+                if (!is_blank(line)) { header = g_strdup(line); cols = table_columns(header); }
+                continue;
+            }
+            if (is_rule_line(line) && prev) {
+                header = g_strdup(prev);
+                cols = table_columns(header);
+            } else if (!is_blank(line)) {
+                prev = line;
             }
             continue;
         }
-        if (strlen(line) <= id_col) continue;
-        {
-            char *name = g_strstrip(g_strndup(line, id_col));
-            char *id = g_strstrip(g_strndup(line + id_col, (strlen(line) > ver_col ? ver_col : strlen(line)) - id_col));
-            char *ver = strlen(line) > ver_col ? g_strstrip(g_strdup(line + ver_col)) : g_strdup("");
-            char *summary = *ver ? g_strdup_printf("Version %s", ver) : NULL;
-            if (*id) g_ptr_array_add(res, store_entry(id, name, summary));
-            g_free(name); g_free(id); g_free(ver); g_free(summary);
+        if (is_blank(line)) {
+            if (kind == SEARCH_SCOOP) break; /* scoop ends the table with a blank line */
+            continue;
+        }
+        if (g_str_has_prefix(line, "---")) continue;
+        len = g_utf8_strlen(line, -1);
+
+        name = table_cell(line, len, cols, 0);
+        if (kind == SEARCH_WINGET) {
+            char *ver;
+            if (cols->len < 2) { g_free(name); break; }
+            id = table_cell(line, len, cols, 1);
+            ver = table_cell(line, len, cols, 2);
+            if (*ver) summary = g_strdup_printf("Version %s", ver);
+            g_free(ver);
+        } else if (kind == SEARCH_SCOOP) {
+            char *ver = table_cell(line, len, cols, 1), *bucket = table_cell(line, len, cols, 2);
+            id = g_strdup(name);
+            if (*ver) summary = *bucket ? g_strdup_printf("Version %s (%s)", ver, bucket) : g_strdup_printf("Version %s", ver);
+            g_free(ver); g_free(bucket);
+        } else { /* SEARCH_SNAP: Summary is the last column */
+            id = g_strdup(name);
+            summary = table_cell(line, len, cols, cols->len - 1);
+            if (cols->len < 2) g_clear_pointer(&summary, g_free);
+        }
+        if (*id) g_ptr_array_add(res, store_entry(id, name, summary));
+        g_free(name); g_free(id); g_free(summary);
+    }
+    g_free(header);
+    if (cols) g_array_unref(cols);
+    g_strfreev(lines);
+}
+
+/* ---------- entries that span several lines (pacman, nix, emerge) ---------- */
+
+static void parse_multiline(SearchKind kind, const char *out, GPtrArray *res)
+{
+    char **lines = g_strsplit(out, "\n", -1);
+    StoreApp *last = NULL;
+
+    for (guint i = 0; lines[i] && res->len < MAX_RESULTS; i++) {
+        char *line = g_strchomp(lines[i]);
+        gboolean indented = *line == ' ' || *line == '\t';
+        char *text = g_strstrip(line);
+        if (!*text) continue;
+
+        if (kind == SEARCH_PACMAN) {
+            if (indented) {
+                if (last && !last->summary) last->summary = g_strdup(text);
+            } else {
+                /* "extra/firefox 120.0-1 [installed]" -> "firefox" */
+                char *space = strchr(text, ' ');
+                char *first = space ? g_strndup(text, (gsize)(space - text)) : g_strdup(text);
+                char *slash = strchr(first, '/');
+                const char *name = slash ? slash + 1 : first;
+                last = store_entry(name, name, NULL);
+                g_ptr_array_add(res, last);
+                g_free(first);
+            }
+        } else if (kind == SEARCH_NIX) {
+            if (g_str_has_prefix(text, "* ")) {
+                /* "* legacyPackages.x86_64-linux.firefox (120.0)" -> attribute "firefox" */
+                char *attr = g_strdup(text + 2), *paren = strstr(attr, " (");
+                char *dot1, *dot2, *name;
+                if (paren) *paren = 0;
+                dot1 = strchr(attr, '.');
+                dot2 = dot1 ? strchr(dot1 + 1, '.') : NULL;
+                name = dot2 ? dot2 + 1 : attr;
+                last = store_entry(name, name, NULL);
+                g_ptr_array_add(res, last);
+                g_free(attr);
+            } else if (last && !last->summary) {
+                last->summary = g_strdup(text);
+            }
+        } else if (kind == SEARCH_EMERGE) {
+            if (text[0] == '*' && text[1] == ' ') {
+                char *atom = g_strstrip(text + 1), *slash = strchr(atom, '/');
+                last = store_entry(atom, slash ? slash + 1 : atom, NULL);
+                g_ptr_array_add(res, last);
+            } else if (last && g_str_has_prefix(text, "Description:")) {
+                g_free(last->summary);
+                last->summary = g_strdup(g_strstrip(text + 12));
+            } else if (last && g_str_has_prefix(text, "Homepage:")) {
+                g_free(last->homepage);
+                last->homepage = g_strdup(g_strstrip(text + 9));
+            }
         }
     }
     g_strfreev(lines);
+}
+
+/* PackageKit (pkcon --plain): "Available  firefox-120.0-1.x86_64 (repo)  summary". */
+static void parse_packagekit_line(const char *line, GPtrArray *res)
+{
+    const char *p = line, *tok;
+    char *id, *name, *summary = NULL;
+    gsize n;
+    gboolean installed = FALSE;
+
+    if (g_ascii_isupper(*p)) { /* leading info word: Available, Installed, ... */
+        const char *w = p;
+        while (*p && !g_ascii_isspace(*p)) p++;
+        installed = g_str_has_prefix(w, "Installed");
+        while (g_ascii_isspace(*p)) p++;
+    }
+    tok = p;
+    while (*p && !g_ascii_isspace(*p)) p++;
+    n = (gsize)(p - tok);
+    if (!n || installed) return;
+    id = g_strndup(tok, n);
+    if (!strchr(id, ';')) {
+        const char *dash = strchr(id, '-');
+        gboolean versioned = FALSE;
+        for (; dash; dash = strchr(dash + 1, '-'))
+            if (g_ascii_isdigit(dash[1])) { versioned = TRUE; break; }
+        if (!versioned) { g_free(id); return; } /* not a package line (status text) */
+    }
+    if (strchr(id, ';')) { *strchr(id, ';') = 0; name = g_strdup(id); }
+    else name = strip_version(id, FALSE);
+    while (g_ascii_isspace(*p)) p++;
+    if (*p == '(') { /* "(repository)" */
+        while (*p && *p != ')') p++;
+        if (*p) p++;
+        while (g_ascii_isspace(*p)) p++;
+    }
+    if (*p) summary = g_strdup(p);
+    if (*name) g_ptr_array_add(res, store_entry(name, name, summary));
+    g_free(id); g_free(name); g_free(summary);
 }
 
 static GPtrArray *parse_results(SearchKind kind, const char *out)
@@ -576,11 +869,12 @@ static GPtrArray *parse_results(SearchKind kind, const char *out)
         g_strfreev(blocks);
         return res;
     }
-    if (kind == SEARCH_WINGET) { parse_winget(out, res); return res; }
+    if (kind == SEARCH_WINGET || kind == SEARCH_SCOOP || kind == SEARCH_SNAP) { parse_table(kind, out, res); return res; }
+    if (kind == SEARCH_PACMAN || kind == SEARCH_NIX || kind == SEARCH_EMERGE) { parse_multiline(kind, out, res); return res; }
 
     lines = g_strsplit(out, "\n", -1);
     for (guint i = 0; lines[i] && res->len < MAX_RESULTS; i++) {
-        char *line = g_strstrip(lines[i]);
+        char *line = g_strstrip(last_redraw(g_strchomp(lines[i])));
         if (!*line || *line == '=' || *line == '#') continue;
         switch (kind) {
         case SEARCH_DASH: {
@@ -615,6 +909,73 @@ static GPtrArray *parse_results(SearchKind kind, const char *out)
             g_strfreev(c);
             break;
         }
+        case SEARCH_DNF: { /* "firefox.x86_64 : Mozilla Firefox"; skips banners like "Last metadata expiration check: ..." */
+            char *sep = strstr(line, " : ");
+            if (sep) {
+                char *name = g_strndup(line, (gsize)(sep - line)), *dot = strrchr(name, '.');
+                if (!strchr(name, ' ')) {
+                    if (dot && (g_str_has_prefix(dot + 1, "x86") || g_str_has_prefix(dot + 1, "aarch") ||
+                                g_str_has_prefix(dot + 1, "i686") || g_str_has_prefix(dot + 1, "i386") ||
+                                g_str_has_prefix(dot + 1, "noarch") || g_str_has_prefix(dot + 1, "ppc") ||
+                                g_str_has_prefix(dot + 1, "s390") || g_str_has_prefix(dot + 1, "armv") ||
+                                g_str_has_prefix(dot + 1, "riscv"))) *dot = 0;
+                    g_ptr_array_add(res, store_entry(name, name, sep + 3));
+                }
+                g_free(name);
+            }
+            break;
+        }
+        case SEARCH_ZYPPER: { /* "   | name | summary | package" */
+            char **c = g_strsplit(line, "|", 5);
+            if (c[0] && c[1] && c[2]) {
+                char *name = g_strdup(c[1]), *summary = g_strdup(c[2]);
+                g_strstrip(name); g_strstrip(summary);
+                if (*name && g_strcmp0(g_strstrip(c[0]), "S") != 0 && g_strcmp0(name, "Name") != 0 && *name != '-')
+                    g_ptr_array_add(res, store_entry(name, name, summary));
+                g_free(name); g_free(summary);
+            }
+            g_strfreev(c);
+            break;
+        }
+        case SEARCH_APK: { /* "firefox-120.0-r0 - Safe and easy web browser" */
+            char *sep = strstr(line, " - ");
+            char *left = sep ? g_strndup(line, (gsize)(sep - line)) : g_strdup(line);
+            char *name = strchr(left, ' ') ? NULL : strip_apk_version(left);
+            if (name && *name) g_ptr_array_add(res, store_entry(name, name, sep ? sep + 3 : NULL));
+            g_free(name); g_free(left);
+            break;
+        }
+        case SEARCH_XBPS: { /* "[-] firefox-120.0_1   Mozilla Firefox" */
+            char *p = line, *end;
+            char *pkgver, *name;
+            if (*p == '[') { char *close = strchr(p, ']'); if (!close) break; p = close + 1; }
+            while (g_ascii_isspace(*p)) p++;
+            end = p;
+            while (*end && !g_ascii_isspace(*end)) end++;
+            if (end == p) break;
+            pkgver = g_strndup(p, (gsize)(end - p));
+            name = strip_version(pkgver, TRUE);
+            while (g_ascii_isspace(*end)) end++;
+            g_ptr_array_add(res, store_entry(name, name, *end ? end : NULL));
+            g_free(pkgver); g_free(name);
+            break;
+        }
+        case SEARCH_PKGIN: { /* "firefox-120.0nb1  Web browser" ; legend lines look like "=: installed" */
+            char *p = line, *end, *pkgver, *name;
+            if (line[1] == ':') break;
+            end = p;
+            while (*end && !g_ascii_isspace(*end)) end++;
+            if (end == p) break;
+            pkgver = g_strndup(p, (gsize)(end - p));
+            name = strip_version(pkgver, TRUE);
+            while (g_ascii_isspace(*end) || *end == '=' || *end == '<' || *end == '>') end++;
+            g_ptr_array_add(res, store_entry(name, name, *end ? end : NULL));
+            g_free(pkgver); g_free(name);
+            break;
+        }
+        case SEARCH_PKGKIT:
+            parse_packagekit_line(line, res);
+            break;
         default: break;
         }
     }
@@ -626,7 +987,15 @@ static GPtrArray *parse_results(SearchKind kind, const char *out)
  * Search
  * ====================================================================== */
 
-typedef struct { GtkWidget *flow, *status; GtkWindow *window; guint generation; SearchKind kind; } SearchCtx;
+typedef struct {
+    GtkWidget *flow, *status;
+    GtkWindow *window;
+    guint generation;
+    const PackageManager *pm; /* NULL for the AppStream fallback */
+    SearchKind kind;
+    char *query;
+    gboolean may_fall_back;   /* PackageKit -> native package manager */
+} SearchCtx;
 
 static guint search_generation;
 
@@ -636,36 +1005,98 @@ static void clear_flow(GtkWidget *flow)
     while ((c = gtk_widget_get_first_child(flow)) != NULL) gtk_flow_box_remove(GTK_FLOW_BOX(flow), c);
 }
 
+static void search_ctx_free(SearchCtx *ctx)
+{
+    if (ctx->flow) g_object_remove_weak_pointer(G_OBJECT(ctx->flow), (gpointer *)&ctx->flow);
+    if (ctx->status) g_object_remove_weak_pointer(G_OBJECT(ctx->status), (gpointer *)&ctx->status);
+    g_free(ctx->query);
+    g_free(ctx);
+}
+
+/* The first detected package manager other than `not_this` that can search. */
+static const PackageManager *native_fallback(const PackageManager *not_this, guint *index)
+{
+    if (!detected) return NULL;
+    for (guint i = 0; i < detected->len; i++) {
+        const PackageManager *pm = g_ptr_array_index(detected, i);
+        if (pm != not_this && pm->search && pm->kind != SEARCH_NONE) { if (index) *index = i; return pm; }
+    }
+    return NULL;
+}
+
+static void search_done(GObject *src, GAsyncResult *res, gpointer data);
+
+/* Starts one search process. Returns FALSE (and fills the status label) when it cannot start. */
+static gboolean launch_search(const PackageManager *pm, SearchKind kind, GPtrArray *argv, const char *query,
+                              GtkWidget *flow, GtkWidget *status, GtkWindow *window, gboolean may_fall_back)
+{
+    GSubprocess *proc;
+    GError *error = NULL;
+    SearchCtx *ctx;
+
+    proc = spawn_pm(argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error);
+    if (!proc) {
+        gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not start the search.");
+        g_clear_error(&error);
+        return FALSE;
+    }
+    ctx = g_new0(SearchCtx, 1);
+    ctx->flow = flow; ctx->status = status; ctx->window = window; ctx->kind = kind; ctx->pm = pm;
+    ctx->query = g_strdup(query);
+    ctx->may_fall_back = may_fall_back;
+    ctx->generation = search_generation;
+    g_object_add_weak_pointer(G_OBJECT(flow), (gpointer *)&ctx->flow);
+    g_object_add_weak_pointer(G_OBJECT(status), (gpointer *)&ctx->status);
+    g_subprocess_communicate_async(proc, NULL, NULL, search_done, ctx);
+    return TRUE;
+}
+
 static void search_done(GObject *src, GAsyncResult *res, gpointer data)
 {
     SearchCtx *ctx = data;
-    char *out = NULL, *err = NULL;
+    GBytes *out = NULL, *err = NULL;
     GError *error = NULL;
-    gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(src), res, &out, &err, &error);
+    gboolean ok = g_subprocess_communicate_finish(G_SUBPROCESS(src), res, &out, &err, &error);
 
     if (!ctx->flow || !ctx->status || ctx->generation != search_generation) {
         /* window closed or a newer search superseded this one */
-    } else if (ok) {
-        GPtrArray *results = parse_results(ctx->kind, out);
+    } else {
+        char *text = ok ? output_to_utf8(out) : NULL;
+        GPtrArray *results = ok ? parse_results(ctx->kind, text) : g_ptr_array_new_with_free_func((GDestroyNotify)store_app_free);
         guint n = results->len;
-        for (guint i = 0; i < n; i++)
-            gtk_flow_box_insert(GTK_FLOW_BOX(ctx->flow),
-                                make_card(g_ptr_array_steal_index(results, 0), ctx->window, FALSE), -1);
-        g_ptr_array_unref(results);
-        {
-            char *m = n ? g_strdup_printf("%u result%s", n, n == 1 ? "" : "s") : g_strdup("No matching applications.");
+        guint fb_index = 0;
+        const PackageManager *fb = (!n && ctx->may_fall_back) ? native_fallback(ctx->pm, &fb_index) : NULL;
+        gboolean handled = FALSE;
+
+        if (fb) {
+            /* PackageKit is missing, not running or found nothing: ask a native package manager. */
+            GPtrArray *argv = build_argv(fb, fb->search, ctx->query, FALSE);
+            char *m = g_strdup_printf("PackageKit returned no results, searching with %s…", fb->label);
             gtk_label_set_text(GTK_LABEL(ctx->status), m);
             g_free(m);
+            if (pm_dropdown) gtk_drop_down_set_selected(GTK_DROP_DOWN(pm_dropdown), fb_index);
+            handled = launch_search(fb, fb->kind, argv, ctx->query, ctx->flow, ctx->status, ctx->window, FALSE);
+            g_ptr_array_unref(argv);
         }
-    } else {
-        gtk_label_set_text(GTK_LABEL(ctx->status), error ? error->message : "Search failed.");
+        if (!handled) {
+            for (guint i = 0; i < n; i++)
+                gtk_flow_box_insert(GTK_FLOW_BOX(ctx->flow),
+                                    make_card(g_ptr_array_steal_index(results, 0), ctx->window, FALSE), -1);
+            if (!ok) gtk_label_set_text(GTK_LABEL(ctx->status), error ? error->message : "Search failed.");
+            else {
+                char *m = n ? g_strdup_printf("%u result%s", n, n == 1 ? "" : "s") : g_strdup("No matching applications.");
+                gtk_label_set_text(GTK_LABEL(ctx->status), m);
+                g_free(m);
+            }
+        }
+        g_ptr_array_unref(results);
+        g_free(text);
     }
     g_clear_error(&error);
-    g_free(out); g_free(err);
-    if (ctx->flow) g_object_remove_weak_pointer(G_OBJECT(ctx->flow), (gpointer *)&ctx->flow);
-    if (ctx->status) g_object_remove_weak_pointer(G_OBJECT(ctx->status), (gpointer *)&ctx->status);
+    if (out) g_bytes_unref(out);
+    if (err) g_bytes_unref(err);
+    search_ctx_free(ctx);
     g_object_unref(src);
-    g_free(ctx);
 }
 
 static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkWindow *window)
@@ -674,18 +1105,17 @@ static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkW
     const PackageManager *pm = current_pm();
     GPtrArray *argv = NULL;
     SearchKind kind = SEARCH_NONE;
-    GSubprocess *proc;
-    GError *error = NULL;
-    SearchCtx *ctx;
+    gboolean ok;
 
     search_generation++;
     clear_flow(flow);
     if (!query || !*query) { gtk_label_set_text(GTK_LABEL(status), "Type a name to search."); return; }
 
     if (pm && pm->search && pm->kind != SEARCH_NONE) {
-        argv = build_argv(pm, pm->search, query);
+        argv = build_argv(pm, pm->search, query, FALSE);
         kind = pm->kind;
     } else if (!lh4051_platform_is_windows() && g_find_program_in_path("appstreamcli")) {
+        pm = NULL;
         argv = g_ptr_array_new_with_free_func(g_free);
         g_ptr_array_add(argv, g_strdup("appstreamcli"));
         g_ptr_array_add(argv, g_strdup("search"));
@@ -700,21 +1130,10 @@ static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkW
         return;
     }
 
-    proc = g_subprocess_newv((const char *const *)argv->pdata,
-                             G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error);
-    g_ptr_array_unref(argv);
-    if (!proc) {
-        gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not start the search.");
-        g_clear_error(&error);
-        return;
-    }
-    ctx = g_new0(SearchCtx, 1);
-    ctx->flow = flow; ctx->status = status; ctx->window = window; ctx->kind = kind;
-    ctx->generation = search_generation;
-    g_object_add_weak_pointer(G_OBJECT(flow), (gpointer *)&ctx->flow);
-    g_object_add_weak_pointer(G_OBJECT(status), (gpointer *)&ctx->status);
     gtk_label_set_text(GTK_LABEL(status), "Searching…");
-    g_subprocess_communicate_utf8_async(proc, NULL, NULL, search_done, ctx);
+    ok = launch_search(pm, kind, argv, query, flow, status, window, pm && kind == SEARCH_PKGKIT);
+    g_ptr_array_unref(argv);
+    (void)ok;
 }
 
 static void search_clicked(GtkButton *b, gpointer data)

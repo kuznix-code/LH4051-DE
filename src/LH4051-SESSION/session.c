@@ -18,6 +18,7 @@ static gboolean start_was_active;
 static void sidebar_visibility(gpointer data)
 {
     gtk_widget_set_visible(GTK_WIDGET(data), lh4051_prefs_get(LH_PREF_SIDEBAR));
+    lh4051_sidebar_sync_desktop(TRUE);
 }
 
 /* ---------- start menu visibility ---------- */
@@ -159,6 +160,7 @@ static void start_composite_mode(GtkApplication *app, gboolean windowed)
     gtk_overlay_add_overlay(GTK_OVERLAY(root), sidebar);
     gtk_widget_set_visible(sidebar, lh4051_prefs_get(LH_PREF_SIDEBAR));
     lh4051_prefs_watch(sidebar_visibility, sidebar);
+    lh4051_sidebar_sync_desktop(FALSE);
 
     start_widget = lh4051_start_menu_new(app);
     gtk_widget_set_halign(start_widget, GTK_ALIGN_START);

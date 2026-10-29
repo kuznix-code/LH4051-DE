@@ -138,6 +138,21 @@ static void search_activated(GtkSearchEntry *e, gpointer app)
 
 typedef struct { GtkWidget *content; GtkWidget *button; gboolean collapsed; } SidebarState;
 
+static SidebarState *sidebar_state;
+static GtkWidget *sidebar_root;
+
+/* Composite mode draws the sidebar over the desktop; let the desktop move the build
+ * watermark out from under it (layer-shell mode shrinks the desktop surface instead). */
+void lh4051_sidebar_sync_desktop(gboolean animate)
+{
+    int inset = 0;
+    if (!lh4051_session_uses_layer_shell() && sidebar_state && sidebar_root &&
+        lh4051_prefs_get(LH_PREF_SIDEBAR) && gtk_widget_get_visible(sidebar_root))
+        inset = sidebar_state->collapsed ? LH4051_SIDEBAR_COLLAPSED
+                                         : LH4051_SIDEBAR_WIDTH + LH4051_SIDEBAR_COLLAPSED;
+    lh4051_desktop_set_sidebar_inset(inset, animate);
+}
+
 static void toggle_collapse(GtkButton *b, gpointer data)
 {
     SidebarState *s = data;
@@ -152,11 +167,13 @@ static void toggle_collapse(GtkButton *b, gpointer data)
     /* Layer-shell surfaces are sized by their content; ask the toplevel to re-fit. */
     if (top && GTK_IS_WINDOW(top) && lh4051_session_uses_layer_shell())
         gtk_window_set_default_size(GTK_WINDOW(top), s->collapsed ? LH4051_SIDEBAR_COLLAPSED : LH4051_SIDEBAR_WIDTH + LH4051_SIDEBAR_COLLAPSED, -1);
+    lh4051_sidebar_sync_desktop(TRUE);
 }
 
 static void on_sidebar_destroy(GtkWidget *w, gpointer data)
 {
     (void)w;
+    if (sidebar_state == data) { sidebar_state = NULL; sidebar_root = NULL; }
     g_free(data);
     analog = digital = date_label = NULL;
 }
@@ -220,6 +237,8 @@ GtkWidget *lh4051_sidebar_new(GtkApplication *app)
         gtk_box_append(GTK_BOX(content), t);
     }
 
+    sidebar_state = state;
+    sidebar_root = root;
     g_signal_connect(root, "destroy", G_CALLBACK(on_sidebar_destroy), state);
     lh4051_prefs_watch(on_clock_pref, NULL);
     update_time();

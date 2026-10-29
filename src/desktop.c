@@ -7,6 +7,17 @@ static GtkWidget *watermark_label;
 static GtkWidget *selected_icon;
 static GtkApplication *desktop_app;
 
+/* The watermark sits in the bottom-right corner. In composite mode the sidebar is an
+ * overlay drawn on top of the desktop, so the watermark is shifted left by the width the
+ * sidebar currently covers. Opening is instant (so the watermark is never clipped);
+ * closing slides it back to the corner. */
+#define WATERMARK_MARGIN 14
+#define WATERMARK_SLIDE_US (140 * 1000)
+static int watermark_inset;           /* current extra right margin in px */
+static int watermark_from, watermark_goal;
+static gint64 watermark_start;
+static guint watermark_tick_id;
+
 typedef void (*IconAction)(GtkApplication *app);
 
 static void act_documents(GtkApplication *a) { lh4051_explorer_open(a, lh4051_user_dir(G_USER_DIRECTORY_DOCUMENTS)); }
@@ -75,6 +86,46 @@ static void load_wallpaper(void)
     }
 }
 
+static void watermark_apply(int inset)
+{
+    watermark_inset = inset;
+    if (watermark_label) gtk_widget_set_margin_end(watermark_label, WATERMARK_MARGIN + inset);
+}
+
+static gboolean watermark_tick(GtkWidget *w, GdkFrameClock *clock, gpointer data)
+{
+    double t = (gdk_frame_clock_get_frame_time(clock) - watermark_start) / (double)WATERMARK_SLIDE_US;
+    double inv;
+    (void)w; (void)data;
+    if (t >= 1.0) {
+        watermark_apply(watermark_goal);
+        watermark_tick_id = 0;
+        return G_SOURCE_REMOVE;
+    }
+    inv = 1.0 - t;
+    watermark_apply(watermark_from + (int)((watermark_goal - watermark_from) * (1.0 - inv * inv * inv)));
+    return G_SOURCE_CONTINUE;
+}
+
+/* Tells the desktop how many pixels at its right edge are covered by the sidebar. */
+void lh4051_desktop_set_sidebar_inset(int px, gboolean animate)
+{
+    if (!watermark_label) return;
+    if (px < 0) px = 0;
+    if (watermark_tick_id) {
+        gtk_widget_remove_tick_callback(watermark_label, watermark_tick_id);
+        watermark_tick_id = 0;
+    }
+    watermark_goal = px;
+    if (!animate || px >= watermark_inset || !gtk_widget_get_mapped(watermark_label)) {
+        watermark_apply(px);
+        return;
+    }
+    watermark_from = watermark_inset;
+    watermark_start = gdk_frame_clock_get_frame_time(gtk_widget_get_frame_clock(watermark_label));
+    watermark_tick_id = gtk_widget_add_tick_callback(watermark_label, watermark_tick, NULL, NULL);
+}
+
 void lh4051_desktop_refresh(void)
 {
     if (!wallpaper_picture) return;
@@ -89,6 +140,8 @@ static void on_desktop_destroy(GtkWidget *w, gpointer data)
 {
     (void)w; (void)data;
     wallpaper_picture = icons_box = watermark_label = selected_icon = NULL;
+    watermark_tick_id = 0;
+    watermark_inset = 0;
 }
 
 GtkWidget *lh4051_desktop_new(GtkApplication *app)
@@ -126,7 +179,7 @@ GtkWidget *lh4051_desktop_new(GtkApplication *app)
     gtk_label_set_justify(GTK_LABEL(watermark_label), GTK_JUSTIFY_RIGHT);
     gtk_widget_set_halign(watermark_label, GTK_ALIGN_END);
     gtk_widget_set_valign(watermark_label, GTK_ALIGN_END);
-    gtk_widget_set_margin_end(watermark_label, 14);
+    gtk_widget_set_margin_end(watermark_label, WATERMARK_MARGIN);
     gtk_widget_set_margin_bottom(watermark_label, LH4051_PANEL_HEIGHT + 10);
     gtk_widget_set_can_target(watermark_label, FALSE);
     gtk_overlay_add_overlay(GTK_OVERLAY(root), watermark_label);
