@@ -36,6 +36,8 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequiredOverridesAllowed=dialog
+; Windows 7 SP1 (6.1.7601) and newer: 7, 8, 8.1, 10, 11
+MinVersion=6.1.7601
 UninstallDisplayIcon={app}\lh4051-de.exe
 #if Arch == "arm64"
 ArchitecturesAllowed=arm64
@@ -60,6 +62,7 @@ Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdi
 [Icons]
 Name: "{group}\LH4051-DE"; Filename: "{app}\lh4051-de.exe"; Parameters: "--windowed"
 Name: "{group}\LH4051-DE (full screen)"; Filename: "{app}\lh4051-de.exe"
+Name: "{group}\LH4051-DE Updater"; Filename: "{app}\lh4051-de-updater.cmd"
 Name: "{group}\Uninstall LH4051-DE"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\LH4051-DE"; Filename: "{app}\lh4051-de.exe"; Parameters: "--windowed"; Tasks: desktopicon
 

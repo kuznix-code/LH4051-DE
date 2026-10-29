@@ -7,6 +7,19 @@ on:
 
 jobs:
   # ---------------------------------------------------------------- Linux
+  # Updater scripts: syntax only (they need GitHub to do real work)
+  updater-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh -n scripts/lh4051-de-updater && sh -n scripts/check-win7.sh && sh -n scripts/bundle-win.sh
+      - name: PowerShell updater parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/windows/lh4051-de-updater.ps1", [ref]$null, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+
   linux:
     name: linux-${{ matrix.arch }}
     strategy:
@@ -197,6 +210,42 @@ jobs:
             dist/*.zip
             dist/*Installer*.exe
 
+  # ------------------------------------------------- Windows 7 / 8 / 8.1
+  # Experimental: builds the exe against the Windows 7 API level and scans the exe plus the bundled
+  # GTK runtime for imports that only exist on newer Windows. A "found" result means the GTK/MSYS2
+  # runtime (not LH4051-DE itself) needs a Windows 7 capable build.
+  windows-legacy:
+    name: windows-x64-legacy (7/8/8.1 check)
+    runs-on: windows-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: make zip binutils
+          pacboy: >-
+            toolchain:p
+            pkgconf:p
+            gtk4:p
+            glib2:p
+            adwaita-icon-theme:p
+      - name: Build with the Windows 7 target
+        run: make -j$(nproc) win64-legacy CC=gcc show-config
+      - name: Smoke test
+        run: ./build/windows-legacy/lh4051-de.exe --version
+      - name: Scan the executable for post-Windows-7 imports
+        run: sh scripts/check-win7.sh build/windows-legacy/lh4051-de.exe
+      - name: Scan the GTK runtime (informational)
+        continue-on-error: true
+        run: |
+          sh scripts/bundle-win.sh build/windows-legacy/lh4051-de.exe dist/legacy-bundle x86_64-w64-mingw32 || true
+          sh scripts/check-win7.sh dist/legacy-bundle
+
   # ----------------------------------------------------------------- MSVC
   # Experimental: cl.exe + a prebuilt GTK4 from gvsbuild. GNU make and a
   # native pkgconf come from MSYS2 UCRT64; MSVC's environment is inherited.
@@ -254,7 +303,17 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          path: src
+      - name: Updater scripts
+        run: |
+          cp src/scripts/lh4051-de-updater artifacts/lh4051-de-updater
+          cp src/windows/lh4051-de-updater.ps1 src/windows/lh4051-de-updater.cmd artifacts/
+      # Tags with a suffix (v0.3.0-beta.1, v0.2.0-rc.1) are published as prereleases: the updater's beta mode
+      # follows those, stable mode follows plain vX.Y.Z tags.
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
