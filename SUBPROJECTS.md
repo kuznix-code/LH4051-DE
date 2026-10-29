@@ -10,3 +10,5 @@ All components live in `src/` and are compiled into the single `lh4051-de` binar
 - `src/explorer.c`, `settings.c`, `appstore.c` — applications.
 - `src/platform.c` (OS differences), `prefs.c` (settings file), `theme.c` + `data/theme.css` (look, embedded as a GResource).
 - `installer/` and `macos/` — LH4051-DE Installer sources (Inno Setup script, unix self-extracting header, macOS Info.plist).
+- **LH4051-DE Updater** (`scripts/lh4051-de-updater` for unix/macOS, `windows/lh4051-de-updater.ps1` + `.cmd` for Windows) —
+  downloads and runs the installer for the stable, beta or dev channel, or builds from source where no installer exists.
