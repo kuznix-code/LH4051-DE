@@ -1,10 +1,10 @@
 ; LH4051-DE Installer (Inno Setup 6)
 ; Inputs come from environment variables (ISPP /D values are parsed as
-; expressions, so bare strings like "x64" or "0.1.0.2026..." would not compile):
-;   LH_VERSION (default 0.1.0)  LH_ARCH (x64|arm64)  LH_BUNDLE (bundle dir)  LH_OUT (output dir)
+; expressions, so bare strings like "x64" or "0.1.1.2026..." would not compile):
+;   LH_VERSION (default 0.1.1)  LH_ARCH (x64|arm64)  LH_BUNDLE (bundle dir)  LH_OUT (output dir)
 #define AppVersion GetEnv("LH_VERSION")
 #if AppVersion == ""
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #define Arch GetEnv("LH_ARCH")
 #if Arch == ""

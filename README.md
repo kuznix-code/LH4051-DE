@@ -6,13 +6,14 @@ A GTK4 desktop shell that recreates the look of **Windows "Longhorn" Build 4051*
 slate taskbar with a pill-shaped Start button, translucent sidebar (search, analog clock, notes),
 two-column Start menu, Longhorn-framed windows, and an Explorer with the blue "Phode" header.
 
-**Version 0.2.0.dev — development branch (`main`).** The current stable line is **0.1.x (LTS)** on the
-[`stable`](https://github.com/kuznix-code/LH4051-DE/tree/stable) branch. See [docs/BRANCHING.md](docs/BRANCHING.md) for how branches and releases work.
+**Version 0.1.1 — stable release, 0.1.x LTS line (`stable` branch).** This branch only receives bug fixes and small
+features. New development happens on [`main`](https://github.com/kuznix-code/LH4051-DE/tree/main) (0.2.0.dev).
+See [docs/BRANCHING.md](docs/BRANCHING.md) for how branches and releases work.
 
 | Branch | Purpose |
 |--------|---------|
 | `main` | 0.2.0.dev — new features and everything in progress |
-| `stable` | 0.1.x LTS — bug fixes and minor features only |
+| `stable` | 0.1.x LTS — bug fixes and minor features only (this branch) |
 | `beta` | 0.2.0 betas, created from `main` when needed |
 
 Runs on **Linux** (x86, x64, ARM64), **Windows 7, 8, 8.1, 10 and 11** (x64, ARM64; MinGW-w64 or MSVC), **macOS** (Intel and Apple Silicon),
