@@ -47,6 +47,11 @@ char *lh4051_computer_root(void);
 const char *lh4051_user_dir(GUserDirectory dir);
 char *lh4051_data_dir(void);
 
+/* winproc.c (Windows only): start a child process with explicit standard handles. */
+#ifdef G_OS_WIN32
+GInputStream *lh4051_win_spawn(const char *const *argv, gboolean merge_stderr, GPid *pid, GError **error);
+#endif
+
 /* prefs.c */
 typedef enum {
     LH_PREF_DESKTOP_ICONS,

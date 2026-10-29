@@ -188,8 +188,9 @@ static const PackageManager *current_pm(void)
  * ====================================================================== */
 
 #ifdef G_OS_WIN32
-/* cmd.exe fallback for .cmd/.bat shims (scoop, choco). Only used when every argument is made of
- * characters cmd.exe treats literally, so nothing from a search result can inject a command. */
+/* .cmd/.bat shims (Scoop) cannot be started directly; they run through cmd.exe. Only used when every
+ * argument is made of characters cmd.exe treats literally, so nothing from a search result (or a
+ * package name) can inject a command. */
 static GPtrArray *wrap_in_cmd(GPtrArray *argv)
 {
     GPtrArray *w = g_ptr_array_new_with_free_func(g_free);
@@ -209,39 +210,55 @@ bad:
     g_ptr_array_unref(w);
     return NULL;
 }
-#endif
 
-/* Starts a package-manager process (argv is NULL-terminated).
- *
- * The shell is a GUI-subsystem program on Windows, so it has no valid standard handles, and a
- * child that inherits them fails with "Failed to execute child process (Bad file descriptor)".
- * Every standard stream is therefore redirected explicitly: the caller redirects stdout/stderr
- * through its flags and stdin becomes a pipe that is closed immediately, so the child sees EOF
- * instead of waiting for input. If the direct launch still fails, retry through cmd.exe. */
-static GSubprocess *spawn_pm(GPtrArray *argv, GSubprocessFlags flags, GError **error)
+/* Resolves argv[0] (winget.exe may be an App Execution Alias in %LOCALAPPDATA%\Microsoft\WindowsApps)
+ * to a full path; scripts go through cmd.exe. Returns a new NULL-terminated argv, or NULL with *error set. */
+static GPtrArray *win_prepare(GPtrArray *argv, GError **error)
 {
-#ifdef G_OS_WIN32
-    GError *first = NULL;
-    GSubprocess *p = g_subprocess_newv((const char *const *)argv->pdata, flags | G_SUBPROCESS_FLAGS_STDIN_PIPE, &first);
-    if (!p) {
-        GPtrArray *wrapped = wrap_in_cmd(argv);
-        if (wrapped) {
-            p = g_subprocess_newv((const char *const *)wrapped->pdata, flags | G_SUBPROCESS_FLAGS_STDIN_PIPE, NULL);
-            g_ptr_array_unref(wrapped);
+    const char *prog = argv->len ? g_ptr_array_index(argv, 0) : NULL;
+    char *path = prog ? g_find_program_in_path(prog) : NULL;
+    GPtrArray *out = NULL;
+
+    if (!prog) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No command given.");
+        return NULL;
+    }
+    if (!path) {
+        /* GLib cannot always see App Execution Aliases (winget); CreateProcess searches PATH itself. */
+        out = g_ptr_array_new_with_free_func(g_free);
+        for (guint i = 0; i < argv->len && g_ptr_array_index(argv, i); i++)
+            g_ptr_array_add(out, g_strdup(g_ptr_array_index(argv, i)));
+        g_ptr_array_add(out, NULL);
+        return out;
+    }
+    {
+        char *lower = g_ascii_strdown(path, -1);
+        gboolean is_exe = g_str_has_suffix(lower, ".exe");
+        g_free(lower);
+        if (is_exe) {
+            out = g_ptr_array_new_with_free_func(g_free);
+            g_ptr_array_add(out, path);
+            path = NULL;
+            for (guint i = 1; i < argv->len && g_ptr_array_index(argv, i); i++)
+                g_ptr_array_add(out, g_strdup(g_ptr_array_index(argv, i)));
+            g_ptr_array_add(out, NULL);
+        } else {
+            out = wrap_in_cmd(argv);
+            if (!out)
+                g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                            "\"%s\" is a script; its arguments contain characters that are not safe to pass through cmd.exe.", prog);
         }
     }
-    if (p) {
-        GOutputStream *in = g_subprocess_get_stdin_pipe(p);
-        g_clear_error(&first);
-        if (in) g_output_stream_close(in, NULL, NULL);
-    } else {
-        g_propagate_error(error, first);
-    }
-    return p;
-#else
-    return g_subprocess_newv((const char *const *)argv->pdata, flags, error);
-#endif
+    g_free(path);
+    return out;
 }
+#else
+/* Starts a package-manager process (argv is NULL-terminated). */
+static GSubprocess *spawn_pm(GPtrArray *argv, GSubprocessFlags flags, GError **error)
+{
+    return g_subprocess_newv((const char *const *)argv->pdata, flags, error);
+}
+#endif
 
 /* Command output as valid UTF-8. Windows tools may answer in the console code page. */
 static char *output_to_utf8(GBytes *bytes)
@@ -270,7 +287,8 @@ static char *output_to_utf8(GBytes *bytes)
 typedef struct {
     GtkWidget *output, *status, *close;
     GtkWindow *window;
-    GSubprocess *process;
+    GSubprocess *process; /* unix */
+    GPid pid;             /* Windows process handle */
     GDataInputStream *stream;
     gboolean running;
     int refs; /* window + wait_async + each pending read */
@@ -321,14 +339,8 @@ static void op_read_line(GObject *src, GAsyncResult *res, gpointer data)
     op_unref(op);
 }
 
-static void op_finished(GObject *src, GAsyncResult *res, gpointer data)
+static void op_complete(Operation *op, int status)
 {
-    Operation *op = data;
-    GError *error = NULL;
-    gboolean ok = g_subprocess_wait_finish(G_SUBPROCESS(src), res, &error);
-    int status = (ok && g_subprocess_get_if_exited(G_SUBPROCESS(src)))
-                     ? g_subprocess_get_exit_status(G_SUBPROCESS(src)) : -1;
-    g_clear_error(&error);
     op->running = FALSE;
     if (op->window) {
         if (status == 0) {
@@ -344,6 +356,24 @@ static void op_finished(GObject *src, GAsyncResult *res, gpointer data)
     }
     op_unref(op);
 }
+
+#ifdef G_OS_WIN32
+static void op_child_exited(GPid pid, gint status, gpointer data)
+{
+    g_spawn_close_pid(pid);
+    op_complete(data, status);
+}
+#else
+static void op_finished(GObject *src, GAsyncResult *res, gpointer data)
+{
+    GError *error = NULL;
+    gboolean ok = g_subprocess_wait_finish(G_SUBPROCESS(src), res, &error);
+    int status = (ok && g_subprocess_get_if_exited(G_SUBPROCESS(src)))
+                     ? g_subprocess_get_exit_status(G_SUBPROCESS(src)) : -1;
+    g_clear_error(&error);
+    op_complete(data, status);
+}
+#endif
 
 static gboolean op_close_request(GtkWindow *w, gpointer data)
 {
@@ -406,6 +436,28 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     g_signal_connect(op->window, "destroy", G_CALLBACK(op_destroyed), op);
     gtk_window_present(op->window);
 
+#ifdef G_OS_WIN32
+    {
+        GPtrArray *prepared = win_prepare(argv, &error);
+        GInputStream *in = prepared ? lh4051_win_spawn((const char *const *)prepared->pdata, TRUE, &op->pid, &error) : NULL;
+        if (prepared) g_ptr_array_unref(prepared);
+        if (!in) {
+            op_append(op, error ? error->message : "Could not start the command.");
+            gtk_label_set_text(GTK_LABEL(op->status), "Could not start the package manager");
+            gtk_widget_add_css_class(op->status, "lh-operation-failed");
+            g_clear_error(&error);
+            return; /* window owns op; released in op_destroyed */
+        }
+        op->running = TRUE;
+        op->refs++; /* child watch */
+        gtk_widget_set_sensitive(op->close, FALSE);
+        gtk_label_set_text(GTK_LABEL(op->status), "Running…");
+        op->stream = g_data_input_stream_new(in);
+        g_object_unref(in);
+        op_read_next(op);
+        g_child_watch_add(op->pid, op_child_exited, op);
+    }
+#else
     op->process = spawn_pm(argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error);
     if (!op->process) {
         op_append(op, error ? error->message : "Could not start the command.");
@@ -421,6 +473,7 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     op->stream = g_data_input_stream_new(g_subprocess_get_stdout_pipe(op->process));
     op_read_next(op);
     g_subprocess_wait_async(op->process, NULL, op_finished, op);
+#endif
 }
 
 /* ======================================================================
@@ -1024,22 +1077,46 @@ static const PackageManager *native_fallback(const PackageManager *not_this, gui
     return NULL;
 }
 
+static void search_complete(SearchCtx *ctx, gboolean ok, GBytes *out, GError *error);
+
+#ifdef G_OS_WIN32
+typedef struct { SearchCtx *ctx; GInputStream *in; GByteArray *buf; GPid pid; } WinRead;
+static void win_read_chunk(GObject *src, GAsyncResult *res, gpointer data);
+#else
 static void search_done(GObject *src, GAsyncResult *res, gpointer data);
+#endif
 
 /* Starts one search process. Returns FALSE (and fills the status label) when it cannot start. */
 static gboolean launch_search(const PackageManager *pm, SearchKind kind, GPtrArray *argv, const char *query,
                               GtkWidget *flow, GtkWidget *status, GtkWindow *window, gboolean may_fall_back)
 {
+#ifdef G_OS_WIN32
+    GPtrArray *prepared;
+    GInputStream *in;
+    GPid pid = 0;
+#else
     GSubprocess *proc;
+#endif
     GError *error = NULL;
     SearchCtx *ctx;
 
+#ifdef G_OS_WIN32
+    prepared = win_prepare(argv, &error);
+    in = prepared ? lh4051_win_spawn((const char *const *)prepared->pdata, FALSE, &pid, &error) : NULL;
+    if (prepared) g_ptr_array_unref(prepared);
+    if (!in) {
+        gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not start the search.");
+        g_clear_error(&error);
+        return FALSE;
+    }
+#else
     proc = spawn_pm(argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, &error);
     if (!proc) {
         gtk_label_set_text(GTK_LABEL(status), error ? error->message : "Could not start the search.");
         g_clear_error(&error);
         return FALSE;
     }
+#endif
     ctx = g_new0(SearchCtx, 1);
     ctx->flow = flow; ctx->status = status; ctx->window = window; ctx->kind = kind; ctx->pm = pm;
     ctx->query = g_strdup(query);
@@ -1047,17 +1124,22 @@ static gboolean launch_search(const PackageManager *pm, SearchKind kind, GPtrArr
     ctx->generation = search_generation;
     g_object_add_weak_pointer(G_OBJECT(flow), (gpointer *)&ctx->flow);
     g_object_add_weak_pointer(G_OBJECT(status), (gpointer *)&ctx->status);
+#ifdef G_OS_WIN32
+    {
+        WinRead *r = g_new0(WinRead, 1);
+        r->ctx = ctx; r->in = in; r->pid = pid; r->buf = g_byte_array_new();
+        g_input_stream_read_bytes_async(in, 8192, G_PRIORITY_DEFAULT, NULL, win_read_chunk, r);
+    }
+#else
     g_subprocess_communicate_async(proc, NULL, NULL, search_done, ctx);
+#endif
     return TRUE;
 }
 
-static void search_done(GObject *src, GAsyncResult *res, gpointer data)
+/* Shows the results of a finished search (or starts the PackageKit -> native fallback) and frees ctx.
+ * `out` and `error` stay owned by the caller. */
+static void search_complete(SearchCtx *ctx, gboolean ok, GBytes *out, GError *error)
 {
-    SearchCtx *ctx = data;
-    GBytes *out = NULL, *err = NULL;
-    GError *error = NULL;
-    gboolean ok = g_subprocess_communicate_finish(G_SUBPROCESS(src), res, &out, &err, &error);
-
     if (!ctx->flow || !ctx->status || ctx->generation != search_generation) {
         /* window closed or a newer search superseded this one */
     } else {
@@ -1092,12 +1174,50 @@ static void search_done(GObject *src, GAsyncResult *res, gpointer data)
         g_ptr_array_unref(results);
         g_free(text);
     }
+    search_ctx_free(ctx);
+}
+
+#ifdef G_OS_WIN32
+static void win_read_chunk(GObject *src, GAsyncResult *res, gpointer data)
+{
+    WinRead *r = data;
+    GError *error = NULL;
+    GBytes *chunk = g_input_stream_read_bytes_finish(G_INPUT_STREAM(src), res, &error);
+
+    if (chunk && g_bytes_get_size(chunk) > 0) {
+        gsize n;
+        const guint8 *d = g_bytes_get_data(chunk, &n);
+        g_byte_array_append(r->buf, d, (guint)n);
+        g_bytes_unref(chunk);
+        g_input_stream_read_bytes_async(r->in, 8192, G_PRIORITY_DEFAULT, NULL, win_read_chunk, r);
+        return;
+    }
+    if (chunk) g_bytes_unref(chunk);
+    {
+        GBytes *out = g_byte_array_free_to_bytes(r->buf); /* EOF (or an error): the child closed its output */
+        search_complete(r->ctx, error == NULL, out, error);
+        g_bytes_unref(out);
+    }
+    g_clear_error(&error);
+    g_spawn_close_pid(r->pid);
+    g_object_unref(r->in);
+    g_free(r);
+}
+#else
+static void search_done(GObject *src, GAsyncResult *res, gpointer data)
+{
+    SearchCtx *ctx = data;
+    GBytes *out = NULL, *err = NULL;
+    GError *error = NULL;
+    gboolean ok = g_subprocess_communicate_finish(G_SUBPROCESS(src), res, &out, &err, &error);
+
+    search_complete(ctx, ok, out, error);
     g_clear_error(&error);
     if (out) g_bytes_unref(out);
     if (err) g_bytes_unref(err);
-    search_ctx_free(ctx);
     g_object_unref(src);
 }
+#endif
 
 static void do_search(GtkWidget *entry, GtkWidget *flow, GtkWidget *status, GtkWindow *window)
 {
