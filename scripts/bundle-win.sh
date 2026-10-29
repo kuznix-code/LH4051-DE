@@ -52,6 +52,10 @@ if command -v glib-compile-schemas >/dev/null 2>&1 && [ -d "$out/share/glib-2.0/
     glib-compile-schemas "$out/share/glib-2.0/schemas"
 fi
 
+# LH4051-DE Updater (PowerShell script + launcher)
+here="$(cd "$(dirname "$0")/.." && pwd)"
+cp "$here/windows/lh4051-de-updater.ps1" "$here/windows/lh4051-de-updater.cmd" "$out/"
+
 # Launcher that keeps GTK on the bundled runtime and offers a console for debugging.
 cat > "$out/lh4051-de-debug.bat" <<'BAT'
 @echo off
