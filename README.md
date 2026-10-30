@@ -42,7 +42,7 @@ CI builds every branch except `redesign-4051`. The installer name is `LH4051-DE-
 | `musl-x86_64`, `musl-i686` | Alpine and other musl systems | |
 | `arm64`, `armv7` | ARM 64 / 32-bit | |
 | `riscv64`, `ppc64el`, `s390x` | built in Debian containers under QEMU | |
-| `mips64el` | built in a Debian container under QEMU | no distribution has GTK 4.10+ for it yet, so this job is skipped and the updater builds from source |
+| `mips64el` | no installer | Debian trixie dropped mips64el and older releases have no GTK 4.10+, so the updater builds it from source |
 
 Foreign-CPU targets are compiled under emulation and are not run on real hardware by CI.
 

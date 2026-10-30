@@ -119,6 +119,9 @@ if [ "$OS_RAW" = Linux ] && [ "$LIBC" = musl ]; then
     case "$ARCH" in x86_64|i686) ;; *) BINARY_OK=0 ;; esac
 fi
 
+# No installer exists for mips64el (Debian dropped it, so CI has no container with GTK 4.10+): build from source.
+[ "$OS_RAW" = Linux ] && [ "$ARCH" = mips64el ] && BINARY_OK=0
+
 # Variants exist for glibc x86-64 only.
 if [ -n "$VARIANT" ]; then
     [ "$OS_RAW" = Linux ] && [ "$ARCH" = x86_64 ] || die "variant '$VARIANT' exists for Linux x86_64 only"
