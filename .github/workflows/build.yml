@@ -114,8 +114,9 @@ jobs:
             dist/*Installer*.run
 
   # Other Linux targets, built inside a distribution container (QEMU emulates the foreign CPUs, so these are slow).
-  # musl = Alpine, glibc = Debian trixie (GTK 4.18). mips64el only has Debian bookworm, whose GTK 4.8 is too old
-  # for LH4051-DE (4.10+), so that job reports "skipped" until a newer GTK exists for mips64el.
+  # musl = Alpine, glibc = Debian trixie (GTK 4.18). linux-mips64el is not built: Debian dropped mips64el in trixie
+  # (bookworm has no Docker image for it and its GTK 4.8 is older than the 4.10 LH4051-DE needs), so there is no
+  # distribution container with a usable GTK for it; the updater compiles from source there.
   linux-containers:
     name: linux-${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -131,7 +132,6 @@ jobs:
           - { name: ppc64el,    platform: linux/ppc64le, image: "debian:trixie",  pm: apt, dist: ppc64el,     skip: "0" }
           - { name: s390x,      platform: linux/s390x,   image: "debian:trixie",  pm: apt, dist: s390x,       skip: "0" }
           - { name: armv7,      platform: linux/arm/v7,  image: "debian:trixie",  pm: apt, dist: armv7,       skip: "0" }
-          - { name: mips64el,   platform: linux/mips64le, image: "debian:bookworm", pm: apt, dist: mips64el,   skip: "1" }
     steps:
       - uses: actions/checkout@v4
       - name: Artifact version
