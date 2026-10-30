@@ -2,7 +2,11 @@ name: build
 
 on:
   push:
+    branches-ignore:
+      - redesign-4051
   pull_request:
+    branches-ignore:
+      - redesign-4051
   workflow_dispatch:
 
 jobs:
@@ -12,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sh -n scripts/lh4051-de-updater && sh -n scripts/check-win7.sh && sh -n scripts/bundle-win.sh
+      - run: sh -n scripts/lh4051-de-updater && sh -n scripts/check-win7.sh && sh -n scripts/bundle-win.sh && sh -n scripts/ci-container-build.sh
       - name: PowerShell updater parses
         shell: pwsh
         run: |
@@ -54,29 +58,94 @@ jobs:
             dist/*.tar.gz
             dist/*Installer*.run
 
-  # Linux x86 (32-bit): GitHub has no i386 runners, so build inside an
-  # i386 Alpine container (QEMU/binfmt). Experimental.
-  linux-x86:
-    name: linux-x86
+  # x86-64 microarchitecture levels. The plain linux-x64 build above is the baseline (v1) that runs on every
+  # x86-64 PC; these are optional, faster builds that need a newer CPU (and the updater's --variant option).
+  linux-x64-variants:
+    name: linux-${{ matrix.name }}
     runs-on: ubuntu-latest
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x64-v2
+            march: x86-64-v2
+            dist: x86_64-v2
+            needs: "ssse3 sse4_1 sse4_2 popcnt cx16"
+          - name: x64-v3
+            march: x86-64-v3
+            dist: x86_64-v3
+            needs: "avx2 bmi1 bmi2 fma movbe abm f16c"
+          - name: x64-v4
+            march: x86-64-v4
+            dist: x86_64-v4
+            needs: "avx512f avx512bw avx512cd avx512dq avx512vl"
+          - name: x64-zen4
+            march: znver4
+            dist: x86_64-zen4
+            needs: "avx512f avx512_bf16 avx512_vbmi2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Artifact version
+        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-4-dev libglib2.0-dev-bin
+          sudo apt-get install -y libgtk4-layer-shell-dev || echo "layer-shell not available; building composite-only"
+      - name: Build (-march=${{ matrix.march }})
+        run: make -j$(nproc) show-config all MARCH=${{ matrix.march }}
+      - name: Smoke test (only when this runner's CPU can run the build)
+        run: |
+          missing=""
+          for f in ${{ matrix.needs }}; do grep -qw "$f" /proc/cpuinfo || missing="$missing $f"; done
+          if [ -n "$missing" ]; then
+            echo "::notice::This runner's CPU lacks:$missing - built but not run."
+          else
+            ./build/linux-gcc/lh4051-de --version
+          fi
+      - name: Package + LH4051-DE Installer
+        run: make dist-linux installer-unix TARGET_OS=linux MARCH=${{ matrix.march }} DIST_ARCH=${{ matrix.dist }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh4051-de-linux-${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*Installer*.run
+
+  # Other Linux targets, built inside a distribution container (QEMU emulates the foreign CPUs, so these are slow).
+  # musl = Alpine, glibc = Debian trixie (GTK 4.18). mips64el only has Debian bookworm, whose GTK 4.8 is too old
+  # for LH4051-DE (4.10+), so that job reports "skipped" until a newer GTK exists for mips64el.
+  linux-containers:
+    name: linux-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: musl-x64,   platform: linux/amd64,   image: "alpine:edge",    pm: apk, dist: musl-x86_64, skip: "0" }
+          - { name: musl-x86,   platform: linux/386,     image: "alpine:edge",    pm: apk, dist: musl-i686,   skip: "0" }
+          - { name: x86,        platform: linux/386,     image: "debian:trixie",  pm: apt, dist: i686,        skip: "0" }
+          - { name: riscv64,    platform: linux/riscv64, image: "debian:trixie",  pm: apt, dist: riscv64,     skip: "0" }
+          - { name: ppc64el,    platform: linux/ppc64le, image: "debian:trixie",  pm: apt, dist: ppc64el,     skip: "0" }
+          - { name: s390x,      platform: linux/s390x,   image: "debian:trixie",  pm: apt, dist: s390x,       skip: "0" }
+          - { name: armv7,      platform: linux/arm/v7,  image: "debian:trixie",  pm: apt, dist: armv7,       skip: "0" }
+          - { name: mips64el,   platform: linux/mips64le, image: "debian:bookworm", pm: apt, dist: mips64el,   skip: "1" }
     steps:
       - uses: actions/checkout@v4
       - name: Artifact version
         run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - uses: docker/setup-qemu-action@v3
-      - name: Build in i386 Alpine
+      - name: Build in ${{ matrix.image }} (${{ matrix.platform }})
         run: |
-          docker run --rm --platform linux/386 -e PKG_VERSION -v "$PWD:/src" -w /src i386/alpine:edge sh -euc '
-            apk add --no-cache build-base pkgconf make gtk4.0-dev glib-dev tar
-            apk add --no-cache gtk4-layer-shell-dev || echo "no layer-shell"
-            make TARGET_OS=linux show-config all
-            ./build/linux-gcc/lh4051-de --version
-            make TARGET_OS=linux DIST_ARCH=i686 dist-linux installer-unix
-          '
+          docker run --rm --platform ${{ matrix.platform }} \
+            -e PKG_VERSION -e PM=${{ matrix.pm }} -e DIST_ARCH=${{ matrix.dist }} -e ALLOW_SKIP=${{ matrix.skip }} \
+            -v "$PWD:/src" -w /src ${{ matrix.image }} sh scripts/ci-container-build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: lh4051-de-linux-x86
+          name: lh4051-de-linux-${{ matrix.name }}
+          if-no-files-found: ignore
           path: |
             dist/*.tar.gz
             dist/*Installer*.run
@@ -294,7 +363,7 @@ jobs:
   # -------------------------------------------------------------- Release
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, macos, windows-mingw]
+    needs: [linux, linux-x64-variants, linux-containers, macos, windows-mingw]
     runs-on: ubuntu-latest
     permissions:
       contents: write

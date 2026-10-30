@@ -16,7 +16,7 @@ See [docs/BRANCHING.md](docs/BRANCHING.md) for how branches and releases work.
 | `stable` | 0.1.x LTS — bug fixes and minor features only (this branch) |
 | `beta` | 0.2.0 betas, created from `main` when needed |
 
-Runs on **Linux** (x86, x64, ARM64), **Windows 7, 8, 8.1, 10 and 11** (x64, ARM64; MinGW-w64 or MSVC), **macOS** (Intel and Apple Silicon),
+Runs on **Linux** (x64, x86, ARM64, ARMv7, RISC-V 64, POWER (ppc64el), s390x; glibc and musl), **Windows 7, 8, 8.1, 10 and 11** (x64, ARM64; MinGW-w64 or MSVC), **macOS** (Intel and Apple Silicon),
 and **FreeBSD / OpenBSD / NetBSD / DragonFly** or any other unix-like system with GTK 4.10+ (ELF, Mach-O and PE targets).
 
 ## Install
@@ -30,6 +30,22 @@ Every release ships a **LH4051-DE Installer**:
 | Arch Linux | `make dist-arch` (PKGBUILD for the tagged release) |
 
 Windows x86 is not supported: MSYS2 has no 32-bit GTK 4.
+
+### Linux builds
+CI builds every branch except `redesign-4051`. The installer name is `LH4051-DE-Installer-<ver>-linux-<target>.run`:
+
+| Target | CPU / libc | Notes |
+|--------|------------|-------|
+| `x86_64` | any x86-64 PC (v1 baseline), glibc | default for PCs |
+| `x86_64-v2` / `-v3` / `-v4` | x86-64-v2 (SSE4.2), v3 (AVX2), v4 (AVX-512), glibc | chosen manually |
+| `x86_64-zen4` | AMD Zen 4 and newer, glibc | `-march=znver4`, chosen manually |
+| `i686` | 32-bit x86, glibc | |
+| `musl-x86_64`, `musl-i686` | Alpine and other musl systems | |
+| `arm64`, `armv7` | ARM 64 / 32-bit | |
+| `riscv64`, `ppc64el`, `s390x` | built in Debian containers under QEMU | |
+| `mips64el` | built in a Debian container under QEMU | no distribution has GTK 4.10+ for it yet, so this job is skipped and the updater builds from source |
+
+Foreign-CPU targets are compiled under emulation and are not run on real hardware by CI.
 
 ### Updating: LH4051-DE Updater
 `lh4051-de-updater` downloads and runs the right installer for your OS, or builds from source if there is none.
@@ -52,6 +68,13 @@ updater builds that branch from source; on Windows set `GH_TOKEN`. Releases (`st
 * **Linux, FreeBSD**: `lh4051-de-updater [--mode beta] [--check] [--yes] [--force] [--prefix DIR]` runs the `.run` installer.
 * **Any other OS or architecture** (or `--source`): downloads the source and compiles it. This needs GTK 4.10+
   development files, a C compiler, GNU Make (`gmake` on BSD) and pkg-config.
+
+**x86-64 variants.** PCs get the baseline (`v1`) build by default; faster builds for newer CPUs are never chosen
+automatically. Pick one with `--variant v2|v3|v4|zen4` or `MODE:VARIANT` (`lh4051-de-updater --mode stable:v3`); it works with
+every mode, including the CI ones (`dev:v3`). The updater first checks `/proc/cpuinfo` and refuses a build the CPU cannot run
+(`--force` overrides). The choice can be stored as `LH4051_UPDATE_VARIANT` or `variant=v3` in `updater.conf`.
+Variants exist for glibc x86-64 only and are never compiled from source. musl systems are detected automatically
+(`LH4051_LIBC=glibc|musl` overrides it).
 
 The mode can also be set with `LH4051_UPDATE_MODE` or `mode=beta` in `~/.config/lh4051-de/updater.conf`.
 
