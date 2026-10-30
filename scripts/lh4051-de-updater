@@ -16,11 +16,20 @@
 #   lts-dev        ... on the lts branch
 #   0.1-dev        ... on the branch that carries release line 0.1
 #
+# x86-64 variants (Linux, glibc): the default build is the baseline (v1) that runs on every x86-64 PC. Faster builds
+# for newer CPUs are chosen explicitly, never automatically:  --variant v2|v3|v4|zen4  (or  MODE:VARIANT, e.g. stable:v3,
+# or LH4051_UPDATE_VARIANT, or "variant=v3" in the config file). The CPU is checked first.
+#   v2    SSE4.2, POPCNT          (Nehalem / 2009+)
+#   v3    AVX2, BMI2, FMA         (Haswell / Zen 1 and newer)
+#   v4    AVX-512                 (Skylake-X / Zen 4 and newer)
+#   zen4  tuned for AMD Zen 4+    (needs AVX-512 incl. BF16)
+# musl systems (Alpine) are detected automatically; override with LH4051_LIBC=glibc|musl.
+#
 # Dev builds are CI artifacts, which GitHub only gives to signed-in users: run `gh auth login` or set
 # GH_TOKEN. Without a token the updater builds the branch from source instead.
 #
 # Installer kind per OS:
-#   Linux / FreeBSD               LH4051-DE-Installer-<ver>-<os>-<arch>.run
+#   Linux / FreeBSD               LH4051-DE-Installer-<ver>-linux-[musl-]<arch>[-<variant>].run
 #   macOS                         LH4051-DE-Installer-<ver>-macos-<arch>.pkg
 #   any other OS or architecture (or --source): download the source and build it.
 #   That needs GTK 4.10+ development files, a C compiler, GNU Make and pkg-config.
@@ -35,13 +44,14 @@ YES=0
 FORCE=0
 FORCE_SOURCE=0
 PREFIX=""
+VARIANT=""
 
 say()  { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-usage() { sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -51,6 +61,8 @@ while [ $# -gt 0 ]; do
         -y|--yes)   YES=1 ;;
         -f|--force) FORCE=1 ;;
         --source)   FORCE_SOURCE=1 ;;
+        --variant)  [ $# -ge 2 ] || die "--variant needs a value"; VARIANT="$2"; shift ;;
+        --variant=*) VARIANT="${1#--variant=}" ;;
         --prefix)   [ $# -ge 2 ] || die "--prefix needs a value"; PREFIX="$2"; shift ;;
         --prefix=*) PREFIX="${1#--prefix=}" ;;
         -h|--help)  usage ;;
@@ -65,6 +77,12 @@ if [ -z "$MODE" ] && [ -f "$CONF" ]; then
     MODE="$(sed -n 's/^[[:space:]]*mode[[:space:]]*=[[:space:]]*\([A-Za-z0-9.-]*\).*/\1/p' "$CONF" | head -n 1)"
 fi
 [ -n "$MODE" ] || MODE=stable
+if [ -z "$VARIANT" ] && [ -n "${LH4051_UPDATE_VARIANT:-}" ]; then VARIANT="$LH4051_UPDATE_VARIANT"; fi
+if [ -z "$VARIANT" ] && [ -f "$CONF" ]; then
+    VARIANT="$(sed -n 's/^[[:space:]]*variant[[:space:]]*=[[:space:]]*\([A-Za-z0-9]*\).*/\1/p' "$CONF" | head -n 1)"
+fi
+case "$MODE" in *:*) VARIANT="${MODE#*:}"; MODE="${MODE%%:*}" ;; esac
+case "$VARIANT" in ""|v1|none) VARIANT="" ;; v2|v3|v4|zen4) ;; *) die "unknown variant '$VARIANT' (v2, v3, v4 or zen4; the default build is v1)" ;; esac
 
 # ---------------------------------------------------------------- platform
 OS_RAW="$(uname -s)"
@@ -76,10 +94,57 @@ case "$OS_RAW" in
     CYGWIN*|MINGW*|MSYS*) die "this is the unix updater; on Windows use lh4051-de-updater.cmd" ;;
     *)       OS=unix ;;
 esac
-ARCH="$(uname -m | sed 's/amd64/x86_64/;s/aarch64/arm64/')"
-# CI publishes installers for Linux, macOS and FreeBSD only; everything else compiles from source.
+# Architecture names follow the installer file names.
+case "${LH4051_ARCH:-$(uname -m)}" in
+    x86_64|amd64)            ARCH=x86_64 ;;
+    i386|i486|i586|i686)     ARCH=i686 ;;
+    aarch64|arm64)           ARCH=arm64 ;;
+    armv7l|armv7|armv8l)     ARCH=armv7 ;;
+    ppc64le|ppc64el)         ARCH=ppc64el ;;
+    mips64|mips64el)         ARCH=mips64el ;;
+    *)                       ARCH="${LH4051_ARCH:-$(uname -m)}" ;;
+esac
+LIBC=glibc
+if [ "$OS_RAW" = Linux ]; then
+    if [ -n "${LH4051_LIBC:-}" ]; then LIBC="$LH4051_LIBC"
+    elif ls /lib/ld-musl-*.so.1 /usr/lib/ld-musl-*.so.1 >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; then LIBC=musl; fi
+fi
+case "$LIBC" in glibc|musl) ;; *) die "LH4051_LIBC must be glibc or musl" ;; esac
+
+# CI publishes installers for Linux, macOS and FreeBSD; musl only for x86_64 and i686.
+# Everything else compiles from source.
 BINARY_OK=0
 case "$OS_RAW" in Linux|Darwin|FreeBSD) BINARY_OK=1 ;; esac
+if [ "$OS_RAW" = Linux ] && [ "$LIBC" = musl ]; then
+    case "$ARCH" in x86_64|i686) ;; *) BINARY_OK=0 ;; esac
+fi
+
+# Variants exist for glibc x86-64 only.
+if [ -n "$VARIANT" ]; then
+    [ "$OS_RAW" = Linux ] && [ "$ARCH" = x86_64 ] || die "variant '$VARIANT' exists for Linux x86_64 only"
+    [ "$LIBC" = glibc ] || die "variant '$VARIANT' is not built for musl; use the default build"
+fi
+
+# cpu_missing VARIANT -> names the CPU features /proc/cpuinfo does not list
+cpu_missing() {
+    case "$1" in
+        v2)   need="ssse3 sse4_1 sse4_2 popcnt cx16" ;;
+        v3)   need="avx2 bmi1 bmi2 fma movbe abm f16c" ;;
+        v4)   need="avx2 bmi2 fma avx512f avx512bw avx512cd avx512dq avx512vl" ;;
+        zen4) need="avx2 bmi2 fma avx512f avx512bw avx512vl avx512_bf16 avx512_vbmi2" ;;
+    esac
+    [ -r /proc/cpuinfo ] || { echo "(cannot read /proc/cpuinfo)"; return; }
+    flags="$(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2)"
+    miss=""
+    for f in $need; do case " $flags " in *" $f "*) ;; *) miss="$miss $f" ;; esac; done
+    printf '%s' "$miss"
+}
+# TARGET_DESC: shown to the user; ASSET_ARCH: installer file name part; ART_SUFFIX: CI artifact name part
+ASSET_ARCH="$ARCH"; ART_SUFFIX=""
+case "$ARCH" in x86_64) ART_SUFFIX=x64 ;; i686) ART_SUFFIX=x86 ;; *) ART_SUFFIX="$ARCH" ;; esac
+if [ -n "$VARIANT" ]; then ASSET_ARCH="$ARCH-$VARIANT"; ART_SUFFIX="$ART_SUFFIX-$VARIANT"; fi
+if [ "$LIBC" = musl ]; then ASSET_ARCH="musl-$ASSET_ARCH"; ART_SUFFIX="musl-$ART_SUFFIX"; fi
+TARGET_DESC="$OS_RAW/$ARCH${VARIANT:+ $VARIANT}$([ "$OS_RAW" = Linux ] && echo " ($LIBC)")"
 
 # ---------------------------------------------------------------- helpers
 TMP="$(mktemp -d 2>/dev/null || mktemp -d -t lh4051)"
@@ -225,7 +290,7 @@ TAG=""; VERSION=""; ASSET_URL=""; SRC_URL=""; SRC_NOTE=""
 asset_regex() {
     case "$OS" in
         macos) printf 'LH4051-DE-Installer-.*-macos-%s\\.pkg$' "$ARCH" ;;
-        *)     printf 'LH4051-DE-Installer-.*-%s-%s\\.run$' "$OS" "$ARCH" ;;
+        *)     printf 'LH4051-DE-Installer-.*-%s-%s\\.run$' "$OS" "$ASSET_ARCH" ;;
     esac
 }
 
@@ -313,7 +378,7 @@ lookup_branch() {
     fi
     fetch "$API/actions/runs/$TAG/artifacts" "$TMP/arts.json" || die "could not list the artifacts of run $TAG"
     case "$OS_RAW" in
-        Linux)   case "$ARCH" in x86_64) a=x64 ;; i?86) a=x86 ;; *) a="$ARCH" ;; esac; ART="lh4051-de-linux-$a" ;;
+        Linux)   ART="lh4051-de-linux-$ART_SUFFIX" ;;
         Darwin)  ART="lh4051-de-macos-$ARCH" ;;
         FreeBSD) ART="lh4051-de-freebsd-$([ "$ARCH" = x86_64 ] && echo x64 || echo "$ARCH")" ;;
         *)       ART="" ;;
@@ -328,7 +393,7 @@ lookup_branch() {
 parse_mode
 load_supported
 INSTALLED="$(installed_version || true)"
-say "LH4051-DE Updater  (mode: $MODE, $OS_RAW/$ARCH)"
+say "LH4051-DE Updater  (mode: $MODE, $TARGET_DESC)"
 say "Installed version: ${INSTALLED:-none found}"
 
 case "$KIND" in branch) lookup_branch ;; *) lookup_release ;; esac
@@ -348,6 +413,18 @@ if [ "$CHECK" = 1 ]; then
 fi
 
 confirm "$([ "$DOWNGRADE" = 1 ] && echo "Replace $INSTALLED with" || echo "Install") LH4051-DE $VERSION?" || { say "Cancelled."; exit 1; }
+
+# A variant is only ever installed as a prebuilt installer; never silently replace it with a baseline build.
+if [ -n "$VARIANT" ] && [ -n "$SRC_NOTE" ]; then
+    die "CI builds need a GitHub token (gh auth login, or GH_TOKEN), and variants are never built from source"
+fi
+if [ -n "$VARIANT" ] && [ "$FORCE_SOURCE" != 1 ] && [ -z "$ASSET_URL" ]; then
+    die "no $VARIANT build exists for $VERSION (variants are published by newer releases and CI builds); try another mode or drop --variant"
+fi
+if [ -n "$VARIANT" ] && [ "$FORCE" != 1 ]; then
+    missing="$(cpu_missing "$VARIANT")"
+    [ -z "$missing" ] || die "this CPU does not report:$missing, which the $VARIANT build needs (use --force to install anyway)"
+fi
 
 # ---------------------------------------------------------------- binary installer
 install_binary() {
