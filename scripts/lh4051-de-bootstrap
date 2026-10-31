@@ -1,0 +1,498 @@
+#!/bin/sh
+# LH4051-DE bootstrap: build the LATEST GTK 4 and every library it needs from source.
+#
+# For systems that have no GTK 4 development files and no package manager to supply them: Linux From Scratch (LFS),
+# minimal chroots, unusual CPU architectures. lh4051-de-updater runs this automatically (--bootstrap, or when it finds
+# GTK 4.10+ missing and the system is LFS); it can also be run by hand:
+#
+#   lh4051-de-bootstrap [--prefix DIR] [--workdir DIR] [--jobs N] [--env-file FILE] [--yes]
+#                       [--list] [--only a,b] [--skip a,b] [--no-x11] [--no-wayland] [--no-gl] [--no-layer-shell]
+#                       [NAME=value ...]
+#
+#   --prefix DIR     install everything here (default /usr/local; use /usr on a classic LFS)
+#   --workdir DIR    downloads, sources, logs and "done" stamps (default /var/tmp/lh4051-de-bootstrap); rerunning
+#                    resumes after the last finished package
+#   --list           resolve and print the latest version and URL of every package, build nothing
+#   --only/--skip    comma separated package names (see --list)
+#   --no-x11         no X11 backend (Wayland only);  --no-wayland: no Wayland backend
+#   --no-gl          no libglvnd (GTK then needs a GL driver you install yourself, or GSK_RENDERER=cairo)
+#   NAME=value       exported to the builds, e.g. CC=gcc
+#   <PKG>_VERSION=x  pin one package (e.g. GLIB_VERSION=2.84.4, XORGPROTO_VERSION=2024.1) if the newest one breaks
+#   GH_TOKEN         optional GitHub token (raises the API rate limit for the version lookups)
+#
+# Order: pkgconf, ninja, meson (+cmake) -> zlib, libffi, pcre2, expat, libxml2, GLib, shared-mime-info -> FreeType,
+# HarfBuzz, FriBidi, Fontconfig, fonts -> libpng, libjpeg-turbo, pixman -> X11 libraries -> Cairo, Pango, gdk-pixbuf,
+# Graphene -> libglvnd, libepoxy, xkbcommon -> Wayland -> icon themes -> GTK 4 -> gtk4-layer-shell.
+# Needs: a C and C++ compiler, GNU make, tar with xz/bz2/gz, python3, curl or wget, sh, sed, awk, grep, bison
+# (libxkbcommon), and roughly 4 GB of disk. Expect hours on slow machines. Mesa is NOT built: GTK falls back to its
+# Cairo renderer until a GL driver is installed. Not every upstream combination can be tested; if a package fails,
+# its log is in <workdir>/logs and the build can be resumed or pinned with <PKG>_VERSION.
+set -eu
+
+PREFIX=/usr/local
+WORK=/var/tmp/lh4051-de-bootstrap
+JOBS=""
+ENVFILE=""
+YES=0
+LIST=0
+ONLY=""
+SKIP=""
+X11=1
+WAYLAND=1
+GL=1
+LAYER=1
+
+say()  { printf '%s\n' "$*"; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
+die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0; }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --prefix)    [ $# -ge 2 ] || die "--prefix needs a value"; PREFIX="$2"; shift ;;
+        --prefix=*)  PREFIX="${1#--prefix=}" ;;
+        --workdir)   [ $# -ge 2 ] || die "--workdir needs a value"; WORK="$2"; shift ;;
+        --workdir=*) WORK="${1#--workdir=}" ;;
+        --jobs|-j)   [ $# -ge 2 ] || die "--jobs needs a value"; JOBS="$2"; shift ;;
+        --env-file)  [ $# -ge 2 ] || die "--env-file needs a value"; ENVFILE="$2"; shift ;;
+        -y|--yes)    YES=1 ;;
+        --list)      LIST=1 ;;
+        --only)      [ $# -ge 2 ] || die "--only needs a value"; ONLY="$(printf '%s' "$2" | tr ',' ' ')"; shift ;;
+        --skip)      [ $# -ge 2 ] || die "--skip needs a value"; SKIP="$(printf '%s' "$2" | tr ',' ' ')"; shift ;;
+        --no-x11)    X11=0 ;;
+        --no-wayland) WAYLAND=0 ;;
+        --no-gl)     GL=0 ;;
+        --no-layer-shell) LAYER=0 ;;
+        -h|--help)   usage ;;
+        [A-Za-z_]*=*) export "$1" ;;
+        *) die "unknown option: $1 (try --help)" ;;
+    esac
+    shift
+done
+[ "$X11" = 1 ] || [ "$WAYLAND" = 1 ] || die "at least one of the X11 and Wayland backends is needed"
+[ -n "$JOBS" ] || JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+case "$PREFIX" in /*) ;; *) die "--prefix must be an absolute path" ;; esac
+mkdir -p "$WORK/dl" "$WORK/src" "$WORK/logs" "$WORK/stamps" "$WORK/idx" 2>/dev/null || die "cannot create $WORK"
+
+# ---------------------------------------------------------------- environment for all builds
+PYVER=""
+if have python3; then PYVER="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"; fi
+export PATH="$PREFIX/bin:$PATH"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export CPPFLAGS="-I$PREFIX/include${CPPFLAGS:+ $CPPFLAGS}"
+export LDFLAGS="-L$PREFIX/lib -Wl,-rpath,$PREFIX/lib${LDFLAGS:+ $LDFLAGS}"
+export ACLOCAL_PATH="$PREFIX/share/aclocal${ACLOCAL_PATH:+:$ACLOCAL_PATH}"
+export XDG_DATA_DIRS="$PREFIX/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+[ -n "$PYVER" ] && export PYTHONPATH="$PREFIX/lib/python$PYVER/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export CFLAGS="${CFLAGS:--O2}"
+export CXXFLAGS="${CXXFLAGS:--O2}"
+
+# ---------------------------------------------------------------- downloads and version lookup
+fetch() { # fetch URL OUTFILE
+    _tries=0
+    while [ "$_tries" -lt 3 ]; do
+        if have curl; then
+            if [ -n "${GH_TOKEN:-}" ] && case "$1" in https://api.github.com/*) true ;; *) false ;; esac; then
+                curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o "$2" "$1" && return 0
+            else curl -fsSL -o "$2" "$1" && return 0; fi
+        elif have wget; then wget -q -O "$2" "$1" && return 0
+        else die "need curl or wget"; fi
+        _tries=$((_tries + 1)); sleep 2
+    done
+    return 1
+}
+
+cached() { # cached URL -> prints the path of a (cached) copy of the page
+    _f="$WORK/idx/$(printf '%s' "$1" | cksum | tr ' ' '_')"
+    [ -s "$_f" ] || fetch "$1" "$_f" || { rm -f "$_f"; return 1; }
+    printf '%s' "$_f"
+}
+
+vsort_last() { sort -t. -k1,1n -k2,2n -k3,3n -k4,4n -k5,5n | tail -n 1; }
+only_even_minor() { awk '{ n = split($0, a, "."); if (n < 2 || a[2] % 2 == 0) print }'; }
+
+# hrefs PAGE -> the last path component of every link
+hrefs() { grep -Eo 'href="[^"?#]+"' "$1" | sed 's/^href="//; s/"$//; s|/$||; s|.*/||'; }
+
+idx_latest() { # idx_latest URL PREFIX EXT EVEN
+    page="$(cached "$1")" || return 1
+    list="$(hrefs "$page" | sed -n "s/^$2\([0-9][0-9.]*\)\.$3\$/\1/p")"
+    [ "$4" = even ] && list="$(printf '%s\n' "$list" | only_even_minor)"
+    printf '%s\n' "$list" | grep . | vsort_last
+}
+
+gnome_resolve() { # gnome_resolve NAME EVEN -> sets V and U
+    page="$(cached "https://download.gnome.org/sources/$1/")" || return 1
+    dirs="$(hrefs "$page" | grep -E '^[0-9]+(\.[0-9]+)?$')"
+    [ "$2" = even ] && dirs="$(printf '%s\n' "$dirs" | only_even_minor)"
+    dir="$(printf '%s\n' "$dirs" | grep . | vsort_last)"
+    [ -n "$dir" ] || return 1
+    page="$(cached "https://download.gnome.org/sources/$1/$dir/")" || return 1
+    V="$(hrefs "$page" | sed -n "s/^$1-\([0-9][0-9.]*\)\.tar\.xz\$/\1/p" | grep . | vsort_last)"
+    U="https://download.gnome.org/sources/$1/$dir/$1-$V.tar.xz"
+}
+
+json_names() { # json_names FILE -> tag names of a GitHub/GitLab tag list
+    python3 -c 'import json, sys
+for t in json.load(open(sys.argv[1])): print(t.get("name", ""))' "$1"
+}
+
+tags_resolve() { # tags_resolve KIND PROJECT TAGPREFIX TAGFMT URLTEMPLATE
+    case "$1" in
+        gh) page="$(cached "https://api.github.com/repos/$2/tags?per_page=100")" || return 1 ;;
+        gl) enc="$(printf '%s' "$2" | sed 's|/|%2F|g')"
+            page="$(cached "https://gitlab.freedesktop.org/api/v4/projects/$enc/repository/tags?per_page=100")" || return 1 ;;
+    esac
+    pre="$3"; [ "$pre" = - ] && pre=""
+    T="$(json_names "$page" | grep -E "^$pre[0-9]+([._][0-9]+)*\$" | sed "s/^$pre//; s/_/./g" | vsort_last)"
+    [ -n "$T" ] || return 1
+    V="$T"
+    [ "$4" = us ] && T="$(printf '%s' "$T" | tr '.' '_')"
+    T="$pre$T"
+    U="$(printf '%s' "$5" | sed "s|@T@|$T|g; s|@V@|$V|g")"
+}
+
+# name kind args...   (kinds: idx URL PREFIX EXT even|any / gnome NAME even|any / gh|gl PROJECT TAGPREFIX dot|us URL / fixed VER URL)
+TABLE="
+pkgconf          idx    https://distfiles.ariadne.space/pkgconf/ pkgconf- tar.xz any
+ninja            gh     ninja-build/ninja v dot https://github.com/ninja-build/ninja/archive/refs/tags/@T@.tar.gz
+meson            gh     mesonbuild/meson - dot https://github.com/mesonbuild/meson/releases/download/@T@/meson-@V@.tar.gz
+cmake            gh     Kitware/CMake v dot https://github.com/Kitware/CMake/releases/download/@T@/cmake-@V@.tar.gz
+zlib             gh     madler/zlib v dot https://github.com/madler/zlib/releases/download/@T@/zlib-@V@.tar.xz
+libffi           gh     libffi/libffi v dot https://github.com/libffi/libffi/releases/download/@T@/libffi-@V@.tar.gz
+pcre2            gh     PCRE2Project/pcre2 pcre2- dot https://github.com/PCRE2Project/pcre2/releases/download/@T@/pcre2-@V@.tar.bz2
+expat            gh     libexpat/libexpat R_ us https://github.com/libexpat/libexpat/releases/download/@T@/expat-@V@.tar.xz
+libxml2          gnome  libxml2 any
+glib             gnome  glib even
+shared-mime-info gl     xdg/shared-mime-info - dot https://gitlab.freedesktop.org/xdg/shared-mime-info/-/archive/@T@/shared-mime-info-@T@.tar.gz
+freetype         idx    https://download.savannah.gnu.org/releases/freetype/ freetype- tar.xz any
+harfbuzz         gh     harfbuzz/harfbuzz - dot https://github.com/harfbuzz/harfbuzz/releases/download/@T@/harfbuzz-@V@.tar.xz
+fribidi          gh     fribidi/fribidi v dot https://github.com/fribidi/fribidi/releases/download/@T@/fribidi-@V@.tar.xz
+fontconfig       idx    https://www.freedesktop.org/software/fontconfig/release/ fontconfig- tar.xz any
+dejavu-fonts     fixed  2.37 https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.tar.bz2
+libpng           gh     pnggroup/libpng v dot https://github.com/pnggroup/libpng/archive/refs/tags/@T@.tar.gz
+libjpeg-turbo    gh     libjpeg-turbo/libjpeg-turbo - dot https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/@T@/libjpeg-turbo-@V@.tar.gz
+pixman           idx    https://cairographics.org/releases/ pixman- tar.gz even
+util-macros      idx    https://xorg.freedesktop.org/archive/individual/util/ util-macros- tar.xz any
+xorgproto        idx    https://xorg.freedesktop.org/archive/individual/proto/ xorgproto- tar.xz any
+xtrans           idx    https://xorg.freedesktop.org/archive/individual/lib/ xtrans- tar.xz any
+libXau           idx    https://xorg.freedesktop.org/archive/individual/lib/ libXau- tar.xz any
+xcb-proto        idx    https://xorg.freedesktop.org/archive/individual/proto/ xcb-proto- tar.xz any
+libxcb           idx    https://xorg.freedesktop.org/archive/individual/lib/ libxcb- tar.xz any
+libX11           idx    https://xorg.freedesktop.org/archive/individual/lib/ libX11- tar.xz any
+libXext          idx    https://xorg.freedesktop.org/archive/individual/lib/ libXext- tar.xz any
+libXrender       idx    https://xorg.freedesktop.org/archive/individual/lib/ libXrender- tar.xz any
+libXfixes        idx    https://xorg.freedesktop.org/archive/individual/lib/ libXfixes- tar.xz any
+libXi            idx    https://xorg.freedesktop.org/archive/individual/lib/ libXi- tar.xz any
+libXcursor       idx    https://xorg.freedesktop.org/archive/individual/lib/ libXcursor- tar.xz any
+libXrandr        idx    https://xorg.freedesktop.org/archive/individual/lib/ libXrandr- tar.xz any
+libXinerama      idx    https://xorg.freedesktop.org/archive/individual/lib/ libXinerama- tar.xz any
+libXdamage       idx    https://xorg.freedesktop.org/archive/individual/lib/ libXdamage- tar.xz any
+libXcomposite    idx    https://xorg.freedesktop.org/archive/individual/lib/ libXcomposite- tar.xz any
+cairo            idx    https://cairographics.org/releases/ cairo- tar.xz even
+pango            gnome  pango even
+gdk-pixbuf       gnome  gdk-pixbuf even
+graphene         gh     ebassi/graphene - dot https://github.com/ebassi/graphene/archive/refs/tags/@T@.tar.gz
+libglvnd         gh     NVIDIA/libglvnd v dot https://github.com/NVIDIA/libglvnd/archive/refs/tags/@T@.tar.gz
+libepoxy         gh     anholt/libepoxy - dot https://github.com/anholt/libepoxy/releases/download/@T@/libepoxy-@V@.tar.xz
+xkeyboard-config idx    https://xorg.freedesktop.org/archive/individual/data/xkeyboard-config/ xkeyboard-config- tar.xz any
+libxkbcommon     idx    https://xkbcommon.org/download/ libxkbcommon- tar.xz any
+wayland          gl     wayland/wayland - dot https://gitlab.freedesktop.org/wayland/wayland/-/releases/@T@/downloads/wayland-@V@.tar.xz
+wayland-protocols gl    wayland/wayland-protocols - dot https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/@T@/downloads/wayland-protocols-@V@.tar.xz
+hicolor-icon-theme idx  https://icon-theme.freedesktop.org/releases/ hicolor-icon-theme- tar.xz any
+gtk4             gnome  gtk even
+adwaita-icon-theme gnome adwaita-icon-theme any
+gtk4-layer-shell gh     wmww/gtk4-layer-shell v dot https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/@T@.tar.gz
+"
+
+# resolve NAME -> sets V (version) and U (URL)
+resolve() {
+    row="$(printf '%s\n' "$TABLE" | awk -v n="$1" '$1 == n { print; exit }')"
+    [ -n "$row" ] || die "no recipe for '$1'"
+    set -- $row
+    pname="$1"; kind="$2"; shift 2
+    up="$(printf '%s' "$pname" | tr 'a-z-' 'A-Z_')"
+    eval "pin=\${${up}_VERSION:-}"
+    V=""; U=""
+    case "$kind" in
+        idx)   V="${pin:-$(idx_latest "$1" "$2" "$3" "$4")}"; [ -n "$V" ] && U="$1$2$V.$3" ;;
+        gnome) if [ -n "$pin" ]; then
+                   page="$(cached "https://download.gnome.org/sources/$1/")" || return 1
+                   dir="$(printf '%s' "$pin" | cut -d. -f1-2)"
+                   V="$pin"; U="https://download.gnome.org/sources/$1/$dir/$1-$V.tar.xz"
+               else gnome_resolve "$1" "$2" || return 1; fi ;;
+        gh|gl) if [ -n "$pin" ]; then
+                   V="$pin"; T="$V"; [ "$2" = - ] || T="$2$V"
+                   if [ "$3" = us ]; then T="$(printf '%s' "$T" | tr '.' '_')"; fi
+                   U="$(printf '%s' "$4" | sed "s|@T@|$T|g; s|@V@|$V|g")"
+               else tags_resolve "$kind" "$1" "$2" "$3" "$4" || return 1; fi ;;
+        fixed) V="$1"; U="$2" ;;
+    esac
+    [ -n "$V" ] && [ -n "$U" ] || return 1
+}
+
+# ---------------------------------------------------------------- build helpers
+meson_has() { # meson_has OPTION -> does the source's option file declare it?
+    for f in meson.options meson_options.txt; do
+        [ -f "$f" ] && grep -Eq "option\(['\"]$1['\"]" "$f" && return 0
+    done
+    return 1
+}
+meson_type() { # meson_type OPTION -> boolean, feature, combo, string, ...
+    for f in meson.options meson_options.txt; do
+        [ -f "$f" ] || continue
+        awk -v n="$1" '
+            $0 ~ ("option\\(\047" n "\047") || $0 ~ ("option\\(\"" n "\"") { on = 1 }
+            on && /type[ ]*:/ { s = $0; sub(/.*type[ ]*:[ ]*./, "", s); sub(/[^a-z].*/, "", s); print s; exit }' "$f"
+    done
+}
+msetup() { # msetup name=value ...   (options this package does not declare are dropped; true/enabled are mapped to its type)
+    args=""
+    for kv in "$@"; do
+        k="${kv%%=*}"; v="${kv#*=}"
+        meson_has "$k" || continue
+        case "$(meson_type "$k"):$v" in
+            feature:true) v=enabled ;;  feature:false) v=disabled ;;
+            boolean:enabled) v=true ;;  boolean:disabled) v=false ;;
+        esac
+        args="$args -D$k=$v"
+    done
+    # shellcheck disable=SC2086
+    meson setup build --prefix="$PREFIX" --libdir=lib --buildtype=release $args
+    ninja -C build -j"$JOBS"
+    ninja -C build install
+}
+auto() { # auto configure-arg ...
+    ./configure --prefix="$PREFIX" --libdir="$PREFIX/lib" --disable-static --disable-docs --disable-dependency-tracking "$@"
+    make -j"$JOBS"
+    make install
+}
+xorg() { auto --disable-specs --without-doxygen --without-xmlto --without-fop --without-xsltproc "$@"; }
+cm() { # cm option ...
+    cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release "$@"
+    cmake --build build -j "$JOBS"
+    cmake --install build
+}
+tf() { [ "$1" = 1 ] && echo true || echo false; }
+en() { [ "$1" = 1 ] && echo enabled || echo disabled; }
+
+build_pkgconf() {
+    ./configure --prefix="$PREFIX" --libdir="$PREFIX/lib" --with-system-libdir="$PREFIX/lib:/usr/lib:/lib" \
+        --with-system-includedir="$PREFIX/include:/usr/include"
+    make -j"$JOBS"; make install
+    ln -sf pkgconf "$PREFIX/bin/pkg-config"
+}
+build_ninja() {
+    python3 configure.py --bootstrap
+    mkdir -p "$PREFIX/bin"; cp ninja "$PREFIX/bin/ninja"
+}
+build_meson() {
+    dest="$PREFIX/lib/lh4051-de-meson"
+    rm -rf "$dest"; mkdir -p "$dest" "$PREFIX/bin"
+    cp -R ./* "$dest/"
+    printf '#!/bin/sh\nexec python3 "%s/meson.py" "$@"\n' "$dest" > "$PREFIX/bin/meson"
+    chmod 755 "$PREFIX/bin/meson"
+}
+build_cmake() { ./bootstrap --prefix="$PREFIX" --parallel="$JOBS" -- -DCMAKE_BUILD_TYPE=Release; make -j"$JOBS"; make install; }
+build_zlib() { ./configure --prefix="$PREFIX" --libdir="$PREFIX/lib"; make -j"$JOBS"; make install; }
+build_libffi() { auto; }
+build_pcre2() { auto --enable-pcre2-8 --enable-pcre2-16 --enable-pcre2-32; }
+build_expat() { auto --without-docbook --without-examples --without-tests; }
+build_libxml2() { auto --without-python --without-lzma --without-icu --without-readline --without-history; }
+build_glib() {
+    msetup tests=false introspection=disabled man-pages=disabled documentation=false libmount=disabled selinux=disabled \
+           sysprof=disabled nls=disabled libelf=disabled glib_debug=disabled
+}
+build_shared_mime_info() {
+    msetup update-mimedb=true build-tools=false build-translations=false build-spec=false
+}
+build_freetype() { auto --with-harfbuzz=no --with-brotli=no --with-bzip2=no --with-png=no; }
+build_harfbuzz() {
+    msetup glib=enabled gobject=disabled icu=disabled freetype=enabled cairo=disabled chafa=disabled tests=disabled \
+           docs=disabled introspection=disabled benchmark=disabled utilities=disabled
+}
+build_fribidi() { msetup docs=false tests=false bin=false; }
+build_fontconfig() {
+    msetup doc=disabled nls=disabled tests=disabled tools=enabled xml-backend=expat cache-build=disabled \
+           default-fonts-dirs="$PREFIX/share/fonts,/usr/share/fonts"
+}
+build_dejavu_fonts() {
+    mkdir -p "$PREFIX/share/fonts/dejavu"
+    cp ttf/*.ttf "$PREFIX/share/fonts/dejavu/"
+}
+build_libpng() { cm -DPNG_TESTS=OFF -DPNG_SHARED=ON -DPNG_STATIC=OFF -DPNG_TOOLS=OFF; }
+build_libjpeg_turbo() {
+    simd=""
+    case "$(uname -m)" in x86_64|i?86) have nasm || simd="-DWITH_SIMD=0" ;; esac
+    cm -DENABLE_STATIC=FALSE -DENABLE_SHARED=TRUE -DWITH_JPEG8=1 $simd
+}
+build_pixman() { msetup tests=disabled demos=disabled gtk=disabled libpng=disabled; }
+build_util_macros() { auto; }
+build_xorgproto() { auto; }
+build_xtrans() { auto; }
+build_libXau() { xorg; }
+build_xcb_proto() { auto; }
+build_libxcb() { xorg --disable-devel-docs; }
+build_libX11() { xorg; }
+build_libXext() { xorg; }
+build_libXrender() { xorg; }
+build_libXfixes() { xorg; }
+build_libXi() { xorg; }
+build_libXcursor() { xorg; }
+build_libXrandr() { xorg; }
+build_libXinerama() { xorg; }
+build_libXdamage() { xorg; }
+build_libXcomposite() { xorg; }
+build_cairo() {
+    msetup tests=disabled gtk_doc=false xlib="$(en $X11)" xcb="$(en $X11)" fontconfig=enabled freetype=enabled png=enabled \
+           glib=enabled zlib=enabled spectre=disabled symbol-lookup=disabled quartz=disabled dwrite=disabled
+}
+build_pango() {
+    msetup introspection=disabled gtk_doc=false build-testsuite=false build-examples=false xft=disabled libthai=disabled \
+           sysprof=disabled cairo=enabled fontconfig=enabled freetype=enabled
+}
+build_gdk_pixbuf() {
+    msetup introspection=disabled man=false gtk_doc=false tests=false installed_tests=false others=disabled glycin=disabled \
+           tiff=disabled png=enabled jpeg=enabled gio_sniffing=false thumbnailer=disabled
+}
+build_graphene() { msetup tests=false introspection=disabled gtk_doc=false installed_tests=false; }
+build_libglvnd() {
+    msetup x11="$(en $X11)" glx="$(en $X11)" egl=true gles1=false gles2=true tests=false headers=true
+}
+build_libepoxy() { msetup tests=false docs=false x11="$(tf $X11)"; }
+build_xkeyboard_config() { msetup nls=false xkb-base="$PREFIX/share/X11/xkb" compat-rules=true; }
+build_libxkbcommon() {
+    msetup enable-docs=false enable-tools=false enable-xkbregistry=false enable-bash-completion=false \
+           enable-wayland="$(tf $WAYLAND)" enable-x11="$(tf $X11)" \
+           xkb-config-root="$PREFIX/share/X11/xkb" x-locale-root="$PREFIX/share/X11/locale"
+}
+build_wayland() { msetup documentation=false tests=false dtd_validation=false scanner=true libraries=true; }
+build_wayland_protocols() { msetup tests=false; }
+build_hicolor_icon_theme() { auto; }
+build_gtk4() {
+    msetup build-demos=false build-examples=false build-tests=false build-testsuite=false introspection=disabled \
+           media-gstreamer=disabled print-cups=disabled vulkan=disabled cloudproviders=disabled sysprof=disabled \
+           tracker=disabled colord=disabled accesskit=disabled man-pages=false documentation=false \
+           x11-backend="$(tf $X11)" wayland-backend="$(tf $WAYLAND)" broadway-backend=false win32-backend=false \
+           macos-backend=false
+}
+build_adwaita_icon_theme() { msetup; }
+build_gtk4_layer_shell() { msetup examples=false docs=false tests=false smoke-tests=false introspection=false vapi=false; }
+
+# ---------------------------------------------------------------- plan
+need_tool() { have "$1" || die "$1 is required to bootstrap (install it from your base system)"; }
+need_tool tar; need_tool make; need_tool python3; need_tool sed; need_tool awk; need_tool grep
+{ have cc || have gcc || have clang; } || die "a C compiler is required"
+have bison || have byacc || warn "bison (or byacc) not found: libxkbcommon needs it"
+have curl || have wget || die "curl or wget is required"
+
+ORDER=""
+add() { for p in "$@"; do ORDER="$ORDER $p"; done; }
+have pkg-config || have pkgconf || add pkgconf
+have ninja || have samu || add ninja
+meson_ok=0
+if have meson; then
+    mv="$(meson --version 2>/dev/null | head -n 1)"
+    case "$mv" in 1.[5-9]*|1.[1-9][0-9]*|[2-9].*) meson_ok=1 ;; esac
+fi
+[ "$meson_ok" = 1 ] || add meson
+have cmake || add cmake
+add zlib libffi pcre2 expat libxml2 glib shared-mime-info freetype harfbuzz fribidi fontconfig dejavu-fonts libpng libjpeg-turbo pixman
+[ "$X11" = 1 ] && add util-macros xorgproto xtrans libXau xcb-proto libxcb libX11 libXext libXrender libXfixes libXi libXcursor \
+                      libXrandr libXinerama libXdamage libXcomposite
+add cairo pango gdk-pixbuf graphene
+[ "$GL" = 1 ] && add libglvnd
+add libepoxy xkeyboard-config libxkbcommon
+[ "$WAYLAND" = 1 ] && add wayland wayland-protocols
+add hicolor-icon-theme gtk4 adwaita-icon-theme
+[ "$WAYLAND" = 1 ] && [ "$LAYER" = 1 ] && add gtk4-layer-shell
+
+selected() { # selected NAME -> honours --only / --skip
+    for s in $SKIP; do [ "$s" = "$1" ] && return 1; done
+    [ -z "$ONLY" ] && return 0
+    for s in $ONLY; do [ "$s" = "$1" ] && return 0; done
+    return 1
+}
+
+if [ "$LIST" = 1 ]; then
+    for p in $ORDER; do
+        if resolve "$p"; then printf '%-20s %-12s %s\n' "$p" "$V" "$U"
+        else printf '%-20s %-12s %s\n' "$p" "?" "(lookup failed)"; fi
+    done
+    exit 0
+fi
+
+# ---------------------------------------------------------------- go
+SUDO_NOTE=""
+if [ ! -d "$PREFIX" ]; then mkdir -p "$PREFIX" 2>/dev/null || die "cannot create $PREFIX (run as root, or choose --prefix)"; fi
+[ -w "$PREFIX" ] || die "$PREFIX is not writable (run as root, or choose --prefix)"
+
+say "LH4051-DE bootstrap: building GTK 4 and its dependencies into $PREFIX"
+say "packages:$ORDER"
+say "work directory: $WORK (logs in $WORK/logs; rerun to resume)"
+if [ "$YES" != 1 ] && [ -t 0 ]; then
+    printf 'This downloads and compiles many packages and takes a long time. Continue? [Y/n] '
+    read -r a
+    case "$a" in n|N|no|NO) die "cancelled" ;; esac
+fi
+
+n=0; total=0
+for p in $ORDER; do selected "$p" && total=$((total + 1)); done
+for p in $ORDER; do
+    selected "$p" || continue
+    n=$((n + 1))
+    resolve "$p" || die "could not find the latest version of $p (see --list; pin it with $(printf '%s' "$p" | tr 'a-z-' 'A-Z_')_VERSION=x)"
+    stamp="$WORK/stamps/$p-$V"
+    if [ -f "$stamp" ]; then say "[$n/$total] $p $V: already built"; continue; fi
+    say "[$n/$total] $p $V"
+    ext="$(printf '%s' "$U" | sed -n 's/.*\(\.tar\.[a-z0-9]*\)$/\1/p')"
+    file="$WORK/dl/$p-$V${ext:-.tar.gz}"
+    if [ ! -s "$file" ]; then
+        fetch "$U" "$file.part" || die "download failed: $U"
+        mv "$file.part" "$file"
+    fi
+    src="$WORK/src/$p"
+    rm -rf "$src"; mkdir -p "$src"
+    tar -xf "$file" -C "$src" --strip-components=1 || die "cannot unpack $file"
+    fn="build_$(printf '%s' "$p" | tr '-' '_')"
+    log="$WORK/logs/$p.log"
+    if ! ( cd "$src" && "$fn" ) > "$log" 2>&1; then
+        tail -n 25 "$log" >&2
+        die "$p $V failed; full log: $log (fix and rerun to resume, or pin another version with $(printf '%s' "$p" | tr 'a-z-' 'A-Z_')_VERSION=x)"
+    fi
+    : > "$stamp"
+    rm -rf "$src"
+done
+
+# ---------------------------------------------------------------- finish
+say "Refreshing caches"
+[ -x "$PREFIX/bin/glib-compile-schemas" ] && "$PREFIX/bin/glib-compile-schemas" "$PREFIX/share/glib-2.0/schemas" 2>/dev/null || true
+[ -x "$PREFIX/bin/update-mime-database" ] && "$PREFIX/bin/update-mime-database" "$PREFIX/share/mime" >/dev/null 2>&1 || true
+[ -d "$PREFIX/share/icons/hicolor" ] && [ -x "$PREFIX/bin/gtk4-update-icon-cache" ] && "$PREFIX/bin/gtk4-update-icon-cache" -q -t -f "$PREFIX/share/icons/hicolor" 2>/dev/null || true
+[ -x "$PREFIX/bin/fc-cache" ] && "$PREFIX/bin/fc-cache" -f >/dev/null 2>&1 || true
+if [ "$PREFIX" != /usr ] && have ldconfig; then
+    if [ -d /etc/ld.so.conf.d ] && [ -w /etc/ld.so.conf.d ]; then printf '%s\n' "$PREFIX/lib" > /etc/ld.so.conf.d/lh4051-de.conf
+    elif [ -w /etc/ld.so.conf ] && ! grep -qx "$PREFIX/lib" /etc/ld.so.conf 2>/dev/null; then printf '%s\n' "$PREFIX/lib" >> /etc/ld.so.conf; fi
+    ldconfig 2>/dev/null || true
+fi
+
+write_env() {
+    cat > "$1" <<EOF
+# Build environment for LH4051-DE against the GTK 4 installed in $PREFIX (written by lh4051-de-bootstrap)
+export PATH="$PREFIX/bin:\$PATH"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig\${PKG_CONFIG_PATH:+:\$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="$PREFIX/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+export LDFLAGS="-L$PREFIX/lib -Wl,-rpath,$PREFIX/lib\${LDFLAGS:+ \$LDFLAGS}"
+export CPPFLAGS="-I$PREFIX/include\${CPPFLAGS:+ \$CPPFLAGS}"
+export XDG_DATA_DIRS="$PREFIX/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+EOF
+}
+mkdir -p "$PREFIX/share/lh4051-de" 2>/dev/null && write_env "$PREFIX/share/lh4051-de/build-env.sh" || true
+[ -n "$ENVFILE" ] && write_env "$ENVFILE"
+
+say "GTK $(pkg-config --modversion gtk4 2>/dev/null || echo '?') is installed in $PREFIX."
+say "To build programs against it: . $PREFIX/share/lh4051-de/build-env.sh"
+if [ "$GL" = 1 ]; then say "Note: Mesa is not built here; install a GL driver for hardware rendering, or run with GSK_RENDERER=cairo."; fi

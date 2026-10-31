@@ -4,6 +4,9 @@ on:
   push:
     branches-ignore:
       - redesign-4051
+    # Without this a tag push does not run the workflow at all, so no vX.Y.Z release would ever be published.
+    tags:
+      - 'v*'
   pull_request:
     branches-ignore:
       - redesign-4051
@@ -16,7 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sh -n scripts/lh4051-de-updater && sh -n scripts/check-win7.sh && sh -n scripts/bundle-win.sh && sh -n scripts/ci-container-build.sh
+      - run: |
+          for f in scripts/lh4051-de-updater scripts/lh4051-de-bootstrap scripts/check-win7.sh scripts/bundle-win.sh scripts/ci-container-build.sh; do
+            if [ -f "$f" ]; then sh -n "$f"; fi
+          done
       - name: PowerShell updater parses
         shell: pwsh
         run: |
@@ -127,6 +133,7 @@ jobs:
         include:
           - { name: musl-x64,   platform: linux/amd64,   image: "alpine:edge",    pm: apk, dist: musl-x86_64, skip: "0" }
           - { name: musl-x86,   platform: linux/386,     image: "alpine:edge",    pm: apk, dist: musl-i686,   skip: "0" }
+          - { name: musl-arm64, platform: linux/arm64,   image: "alpine:edge",    pm: apk, dist: musl-arm64,  skip: "0" }
           - { name: x86,        platform: linux/386,     image: "debian:trixie",  pm: apt, dist: i686,        skip: "0" }
           - { name: riscv64,    platform: linux/riscv64, image: "debian:trixie",  pm: apt, dist: riscv64,     skip: "0" }
           - { name: ppc64el,    platform: linux/ppc64le, image: "debian:trixie",  pm: apt, dist: ppc64el,     skip: "0" }
@@ -360,6 +367,40 @@ jobs:
           name: lh4051-de-windows-msvc
           path: build/windows-msvc/lh4051-de.exe
 
+  # ------------------------------------------------- Rolling CI release
+  # Every push to a branch refreshes the pre-release "ci-<branch>" with that build's installers. The updater's dev modes
+  # (dev, stable-dev, ...) download from it, so they need no GitHub token (raw Actions artifacts do).
+  # ci-build.txt carries the exact version and commit. The tag has no vX.Y.Z form, so stable/beta/lts modes ignore it.
+  ci-release:
+    if: always() && github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    needs: [linux, linux-x64-variants, linux-containers, macos, freebsd, windows-mingw]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish ci-<branch>
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          tag="ci-$(printf '%s' "$BRANCH" | tr '/' '-')"
+          version="$(sh scripts/pkg-version.sh)"
+          mkdir -p out
+          cp artifacts/*Installer* out/ 2>/dev/null || true
+          ls out | grep -q . || { echo "::warning::no installers were built; not publishing $tag"; exit 0; }
+          printf 'version=%s\nsha=%s\nbranch=%s\n' "$version" "$GITHUB_SHA" "$BRANCH" > out/ci-build.txt
+          gh release delete "$tag" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "CI build of $BRANCH ($version)" \
+            --notes "Rolling build of the $BRANCH branch at ${GITHUB_SHA::7}. Not a release; use LH4051-DE Updater (dev modes)."
+
   # -------------------------------------------------------------- Release
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -378,6 +419,7 @@ jobs:
       - name: Updater scripts
         run: |
           cp src/scripts/lh4051-de-updater artifacts/lh4051-de-updater
+          if [ -f src/scripts/lh4051-de-bootstrap ]; then cp src/scripts/lh4051-de-bootstrap artifacts/lh4051-de-bootstrap; fi
           cp src/windows/lh4051-de-updater.ps1 src/windows/lh4051-de-updater.cmd artifacts/
       # Tags with a suffix (v0.3.0-beta.1, v0.2.0-rc.1) are published as prereleases: the updater's beta mode
       # follows those, stable mode follows plain vX.Y.Z tags.

@@ -1,7 +1,7 @@
 #!/bin/sh
 # LH4051-DE Updater (Linux, macOS, FreeBSD and other unix-like systems)
 #
-#   lh4051-de-updater [--mode MODE] [--check] [--yes] [--force] [--source] [--prefix DIR]
+#   lh4051-de-updater [--mode MODE] [--check] [--yes] [--force] [--source] [--bootstrap] [--prefix DIR]
 #
 # Modes (default: stable; also LH4051_UPDATE_MODE or "mode=..." in ~/.config/lh4051-de/updater.conf)
 #   stable         newest stable release
@@ -25,14 +25,24 @@
 #   zen4  tuned for AMD Zen 4+    (needs AVX-512 incl. BF16)
 # musl systems (Alpine) are detected automatically; override with LH4051_LIBC=glibc|musl.
 #
-# Dev builds are CI artifacts, which GitHub only gives to signed-in users: run `gh auth login` or set
-# GH_TOKEN. Without a token the updater builds the branch from source instead.
+# Dev builds ("dev", "stable-dev", ...) come from the rolling CI release of the branch (tag ci-<branch>), which needs no
+# token. If that release does not exist yet, the updater falls back to the raw GitHub Actions artifacts (they need
+# `gh auth login` or GH_TOKEN) and finally to building the branch from source.
+# "stable" / "lts" follow tagged releases; while the line has none yet (no vX.Y.Z tag has been published) the updater
+# uses the newest CI build of that line's branch instead and says so.
 #
 # Installer kind per OS:
 #   Linux / FreeBSD               LH4051-DE-Installer-<ver>-linux-[musl-]<arch>[-<variant>].run
 #   macOS                         LH4051-DE-Installer-<ver>-macos-<arch>.pkg
 #   any other OS or architecture (or --source): download the source and build it.
 #   That needs GTK 4.10+ development files, a C compiler, GNU Make and pkg-config.
+#   Prebuilt installers exist for: Linux glibc x86_64 (+v2/v3/v4/zen4), arm64, i686, armv7, riscv64, ppc64el, s390x;
+#   Linux musl x86_64, i686, arm64; macOS x86_64/arm64; FreeBSD x86_64. Everything else is built from source.
+#
+# Linux From Scratch and other systems without GTK 4: --bootstrap (also offered automatically when GTK 4.10+ is
+# missing, and implied on LFS) first builds the latest versions of GTK 4 and everything it needs (zlib, libffi, GLib,
+# FreeType, HarfBuzz, Pango, Cairo, X11/Wayland libraries, ...) with scripts/lh4051-de-bootstrap from the source tree,
+# installs them under --prefix (default /usr/local), and then builds LH4051-DE itself.
 set -eu
 
 REPO="kuznix-code/LH4051-DE"
@@ -43,15 +53,17 @@ CHECK=0
 YES=0
 FORCE=0
 FORCE_SOURCE=0
+BOOTSTRAP=auto   # auto | 1 (--bootstrap) | 0 (--no-bootstrap)
 PREFIX=""
 VARIANT=""
+ASSET_IS_ZIP=0   # 1 when ASSET_URL is a GitHub Actions artifact (a zip around the installer)
 
 say()  { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-usage() { sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -61,6 +73,8 @@ while [ $# -gt 0 ]; do
         -y|--yes)   YES=1 ;;
         -f|--force) FORCE=1 ;;
         --source)   FORCE_SOURCE=1 ;;
+        --bootstrap) BOOTSTRAP=1; FORCE_SOURCE=1 ;;
+        --no-bootstrap) BOOTSTRAP=0 ;;
         --variant)  [ $# -ge 2 ] || die "--variant needs a value"; VARIANT="$2"; shift ;;
         --variant=*) VARIANT="${1#--variant=}" ;;
         --prefix)   [ $# -ge 2 ] || die "--prefix needs a value"; PREFIX="$2"; shift ;;
@@ -101,7 +115,16 @@ case "${LH4051_ARCH:-$(uname -m)}" in
     aarch64|arm64)           ARCH=arm64 ;;
     armv7l|armv7|armv8l)     ARCH=armv7 ;;
     ppc64le|ppc64el)         ARCH=ppc64el ;;
+    ppc64)                   ARCH=ppc64 ;;
+    ppc|ppc32|powerpc)       ARCH=ppc ;;
     mips64|mips64el)         ARCH=mips64el ;;
+    mips|mipsel)             ARCH="$(uname -m)" ;;
+    riscv64)                 ARCH=riscv64 ;;
+    riscv32)                 ARCH=riscv32 ;;
+    s390x)                   ARCH=s390x ;;
+    loongarch64)             ARCH=loongarch64 ;;
+    sparc64)                 ARCH=sparc64 ;;
+    alpha|ia64|m68k|sh4|hppa|hppa64|arc|or1k|microblaze) ARCH="$(uname -m)" ;;
     *)                       ARCH="${LH4051_ARCH:-$(uname -m)}" ;;
 esac
 LIBC=glibc
@@ -111,12 +134,12 @@ if [ "$OS_RAW" = Linux ]; then
 fi
 case "$LIBC" in glibc|musl) ;; *) die "LH4051_LIBC must be glibc or musl" ;; esac
 
-# CI publishes installers for Linux, macOS and FreeBSD; musl only for x86_64 and i686.
-# Everything else compiles from source.
+# CI publishes installers for Linux, macOS and FreeBSD; musl only for x86_64, i686 and arm64.
+# Every other OS, libc or CPU architecture compiles from source (a missing installer also falls back to source).
 BINARY_OK=0
 case "$OS_RAW" in Linux|Darwin|FreeBSD) BINARY_OK=1 ;; esac
 if [ "$OS_RAW" = Linux ] && [ "$LIBC" = musl ]; then
-    case "$ARCH" in x86_64|i686) ;; *) BINARY_OK=0 ;; esac
+    case "$ARCH" in x86_64|i686|arm64) ;; *) BINARY_OK=0 ;; esac
 fi
 
 # No installer exists for mips64el (Debian dropped it, so CI has no container with GTK 4.10+): build from source.
@@ -288,7 +311,7 @@ parse_mode() {
 }
 
 # ---------------------------------------------------------------- lookups
-TAG=""; VERSION=""; ASSET_URL=""; SRC_URL=""; SRC_NOTE=""
+TAG=""; VERSION=""; ASSET_URL=""; SRC_URL=""; SRC_NOTE=""; FALLBACK_BRANCH=0; SHA=""
 
 asset_regex() {
     case "$OS" in
@@ -324,7 +347,13 @@ lookup_release() {
     if [ -z "$best" ]; then
         case "$KIND:$CHANNEL" in
             exact:*) die "release $WANT_EXACT does not exist" ;;
-            release:lts) die "no LTS release found${WANT_LINE:+ for line $WANT_LINE}; LTS lines: $(lines_with lts | tr '\n' ' ')" ;;
+            release:stable|release:lts)
+                # No vX.Y.Z tag has been released for this line yet: use the newest CI build of its branch.
+                if [ -z "$WANT_LINE" ]; then BRANCH="$(branch_of_channel "$CHANNEL")"; else BRANCH="$(branch_of_line "$WANT_LINE")"; fi
+                [ -n "$BRANCH" ] || die "no $CHANNEL release has been published yet, and no branch is listed for it"
+                say "No $CHANNEL release has been tagged yet; using the newest CI build of the '$BRANCH' branch."
+                FALLBACK_BRANCH=1
+                return 0 ;;
             *) die "no $CHANNEL release has been published yet" ;;
         esac
     fi
@@ -345,17 +374,49 @@ lookup_release() {
     SRC_URL="https://github.com/$REPO/archive/refs/tags/$TAG.tar.gz"
 }
 
+# rolling_release BRANCH -> fills VERSION, SHA and ASSET_URL from the branch's rolling CI release (tag ci-<branch>).
+# That release is rebuilt by CI on every push, is public, and needs no token. Returns 1 when there is none.
+rolling_release() {
+    rtag="ci-$(printf '%s' "$1" | tr '/' '-')"
+    fetch "$API/releases/tags/$rtag" "$TMP/rolling.json" 2>/dev/null || return 1
+    json_get "$TMP/rolling.json" '.assets[]|[.name,.browser_download_url]|@tsv' \
+        '["%s\t%s" % (a["name"], a["browser_download_url"]) for a in d.get("assets", [])]' > "$TMP/rassets.tsv" 2>/dev/null || return 1
+    [ -s "$TMP/rassets.tsv" ] || return 1
+    info="$(awk -F'\t' '$1 == "ci-build.txt" { print $2; exit }' "$TMP/rassets.tsv")"
+    [ -n "$info" ] || return 1
+    fetch "$info" "$TMP/ci-build.txt" 2>/dev/null || return 1
+    VERSION="$(sed -n 's/^version=//p' "$TMP/ci-build.txt" | head -n 1)"
+    SHA="$(sed -n 's/^sha=//p' "$TMP/ci-build.txt" | head -n 1)"
+    [ -n "$VERSION" ] && [ -n "$SHA" ] || return 1
+    safe_ref "$VERSION"; safe_ref "$SHA"
+    rx="$(asset_regex)"
+    ASSET_URL="$(awk -F'\t' '$1 != "" { print $2 }' "$TMP/rassets.tsv" | grep -E "$rx" | head -n 1 || true)"
+    ASSET_IS_ZIP=0
+    return 0
+}
+
 lookup_branch() {
-    if [ -n "$WANT_LINE" ]; then
-        BRANCH="$(branch_of_line "$WANT_LINE")"
-        [ -n "$BRANCH" ] || die "release line $WANT_LINE is not listed in supported-releases.txt"
-    else
-        BRANCH="$(branch_of_channel "$CHANNEL")"
-        if [ -z "$BRANCH" ]; then
-            case "$CHANNEL" in dev) BRANCH=main ;; *) BRANCH="$CHANNEL" ;; esac
+    if [ "$FALLBACK_BRANCH" != 1 ]; then
+        if [ -n "$WANT_LINE" ]; then
+            BRANCH="$(branch_of_line "$WANT_LINE")"
+            [ -n "$BRANCH" ] || die "release line $WANT_LINE is not listed in supported-releases.txt"
+        else
+            BRANCH="$(branch_of_channel "$CHANNEL")"
+            if [ -z "$BRANCH" ]; then
+                case "$CHANNEL" in dev) BRANCH=main ;; *) BRANCH="$CHANNEL" ;; esac
+            fi
         fi
     fi
     safe_ref "$BRANCH"
+    SRC_NOTE=""
+
+    if rolling_release "$BRANCH"; then
+        SRC_URL="https://github.com/$REPO/archive/$SHA.tar.gz"
+        if [ "$BINARY_OK" != 1 ] || [ -z "$ASSET_URL" ]; then ASSET_URL=""; fi
+        return 0
+    fi
+
+    # No rolling release (yet): raw Actions artifacts, which need a token.
     fetch "$API/actions/runs?branch=$BRANCH&status=success&per_page=1" "$TMP/runs.json" || die "could not reach GitHub (actions/runs)"
     TAG="$(json_get "$TMP/runs.json" '.workflow_runs[0].id // empty' '[str(r["id"]) for r in d["workflow_runs"]][:1]' | head -n 1)"
     SHA="$(json_get "$TMP/runs.json" '.workflow_runs[0].head_sha // empty' '[r["head_sha"] for r in d["workflow_runs"]][:1]' | head -n 1)"
@@ -376,7 +437,7 @@ lookup_branch() {
 
     SRC_URL="https://github.com/$REPO/archive/$SHA.tar.gz"
     if [ -z "$TOKEN" ]; then
-        SRC_NOTE="CI builds need a GitHub token (gh auth login, or GH_TOKEN); building $BRANCH from source instead."
+        SRC_NOTE="No rolling CI release for '$BRANCH' yet and no GitHub token (gh auth login, or GH_TOKEN) for the raw CI artifacts; building $BRANCH from source instead."
         return 0
     fi
     fetch "$API/actions/runs/$TAG/artifacts" "$TMP/arts.json" || die "could not list the artifacts of run $TAG"
@@ -389,6 +450,7 @@ lookup_branch() {
     if [ "$BINARY_OK" = 1 ] && [ -n "$ART" ]; then
         ASSET_URL="$(json_get "$TMP/arts.json" ".artifacts[]|select(.name==\"$ART\" and (.expired|not))|.archive_download_url" \
                      "[a['archive_download_url'] for a in d['artifacts'] if a['name']=='$ART' and not a.get('expired')]" | head -n 1 || true)"
+        [ -n "$ASSET_URL" ] && ASSET_IS_ZIP=1
     fi
 }
 
@@ -400,6 +462,7 @@ say "LH4051-DE Updater  (mode: $MODE, $TARGET_DESC)"
 say "Installed version: ${INSTALLED:-none found}"
 
 case "$KIND" in branch) lookup_branch ;; *) lookup_release ;; esac
+[ "$FALLBACK_BRANCH" = 1 ] && lookup_branch
 say "Available ($MODE): $VERSION${BRANCH:+  [branch $BRANCH]}"
 
 DOWNGRADE=0
@@ -419,7 +482,7 @@ confirm "$([ "$DOWNGRADE" = 1 ] && echo "Replace $INSTALLED with" || echo "Insta
 
 # A variant is only ever installed as a prebuilt installer; never silently replace it with a baseline build.
 if [ -n "$VARIANT" ] && [ -n "$SRC_NOTE" ]; then
-    die "CI builds need a GitHub token (gh auth login, or GH_TOKEN), and variants are never built from source"
+    die "no rolling CI release for this branch yet and no GitHub token (gh auth login, or GH_TOKEN); variants are never built from source"
 fi
 if [ -n "$VARIANT" ] && [ "$FORCE_SOURCE" != 1 ] && [ -z "$ASSET_URL" ]; then
     die "no $VARIANT build exists for $VERSION (variants are published by newer releases and CI builds); try another mode or drop --variant"
@@ -431,7 +494,7 @@ fi
 
 # ---------------------------------------------------------------- binary installer
 install_binary() {
-    if [ "$KIND" = branch ]; then
+    if [ "$ASSET_IS_ZIP" = 1 ]; then
         have unzip || die "unzip is needed to unpack the CI artifact"
         fetch "$ASSET_URL" "$TMP/artifact.zip" || die "artifact download failed (is your GitHub token valid?)"
         mkdir -p "$TMP/art" && unzip -q "$TMP/artifact.zip" -d "$TMP/art"
@@ -455,35 +518,74 @@ install_binary() {
 }
 
 # ---------------------------------------------------------------- source build
+is_lfs() {
+    [ -n "${LH4051_LFS:-}" ] && return 0
+    [ -f /etc/lfs-release ] || [ -f /etc/lfs-version ] && return 0
+    [ -r /etc/os-release ] && grep -Eqi '^(ID|NAME)=.?(lfs|linux from scratch)' /etc/os-release && return 0
+    return 1
+}
+
+find_tool() { # find_tool NAME CANDIDATE...  -> sets the variable NAME to the first candidate that exists
+    _var="$1"; shift
+    for _c in "$@"; do [ -n "$_c" ] && have "$_c" && { eval "$_var=\$_c"; return 0; }; done
+    return 1
+}
+
+gtk_ready() {
+    PKGCFG=""; find_tool PKGCFG pkg-config pkgconf || return 1
+    "$PKGCFG" --atleast-version=4.10 gtk4 2>/dev/null || return 1
+    have glib-compile-resources || return 1
+}
+
 install_source() {
     [ -n "$SRC_NOTE" ] && say "$SRC_NOTE"
     say "Building from source ($OS_RAW/$ARCH)."
     have tar || die "tar is required"
-    CCBIN=""
-    for c in "${CC:-}" cc gcc clang; do [ -n "$c" ] && have "$c" && { CCBIN="$c"; break; }; done
-    [ -n "$CCBIN" ] || die "a C compiler is required (gcc or clang)"
+    CCBIN=""; find_tool CCBIN "${CC:-}" cc gcc clang || die "a C compiler is required (gcc or clang)"
     MAKEBIN=""
     for m in gmake make; do
         have "$m" && "$m" --version 2>/dev/null | grep -q "GNU Make" && { MAKEBIN="$m"; break; }
     done
     [ -n "$MAKEBIN" ] || die "GNU Make is required (install gmake)"
-    PKGCFG=""
-    for c in pkg-config pkgconf; do have "$c" && { PKGCFG="$c"; break; }; done
-    [ -n "$PKGCFG" ] || die "pkg-config (or pkgconf) is required"
-    "$PKGCFG" --atleast-version=4.10 gtk4 2>/dev/null || die "GTK 4.10 or newer development files are required (found: $("$PKGCFG" --modversion gtk4 2>/dev/null || echo none))"
-    have glib-compile-resources || die "glib-compile-resources is required (glib development tools)"
 
     fetch "$SRC_URL" "$TMP/src.tar.gz" || die "source download failed"
     mkdir -p "$TMP/src" && tar -xzf "$TMP/src.tar.gz" -C "$TMP/src" --strip-components=1
+
+    TARGET="${PREFIX:-/usr/local}"
+    SUDO=""
+    if [ "$(id -u)" != 0 ] && { [ ! -d "$TARGET" ] || [ ! -w "$TARGET" ]; }; then
+        find_tool SUDO sudo doas || SUDO=""
+    fi
+
+    # GTK 4.10+ missing? Offer (or, with --bootstrap / on Linux From Scratch, just do) a from-scratch dependency build.
+    if [ "$BOOTSTRAP" = 1 ] || ! gtk_ready; then
+        if [ "$BOOTSTRAP" = 0 ]; then
+            die "GTK 4.10 or newer development files, pkg-config and glib-compile-resources are required (rerun without --no-bootstrap to build them from source)"
+        fi
+        if [ "$BOOTSTRAP" != 1 ]; then
+            if is_lfs; then say "Linux From Scratch detected: GTK 4 and its dependencies will be built from source first."
+            elif [ -t 0 ] && [ "$YES" != 1 ]; then
+                confirm "GTK 4.10+ was not found. Build the latest GTK 4 and all of its dependencies from source first (this takes a long time)?" \
+                    || die "cancelled; install the GTK 4 development files with your package manager, or rerun with --bootstrap"
+            else
+                die "GTK 4.10+ development files were not found; install them, or rerun with --bootstrap to build them from source"
+            fi
+        fi
+        [ -f "$TMP/src/scripts/lh4051-de-bootstrap" ] || die "this source tree has no scripts/lh4051-de-bootstrap (too old); install GTK 4 yourself"
+        say "Bootstrapping GTK 4 and its dependencies into $TARGET (latest upstream versions)."
+        $SUDO sh "$TMP/src/scripts/lh4051-de-bootstrap" --prefix "$TARGET" --yes --env-file "$TMP/bootstrap.env" \
+            --workdir "${LH4051_BOOTSTRAP_DIR:-${TMPDIR:-/var/tmp}/lh4051-de-bootstrap}" CC="$CCBIN" || die "the dependency bootstrap failed (its logs are in the work directory; rerun to resume)"
+        [ -f "$TMP/bootstrap.env" ] && . "$TMP/bootstrap.env"
+    fi
+
+    PKGCFG=""; find_tool PKGCFG pkg-config pkgconf || die "pkg-config (or pkgconf) is required"
+    "$PKGCFG" --atleast-version=4.10 gtk4 2>/dev/null || die "GTK 4.10 or newer development files are required (found: $("$PKGCFG" --modversion gtk4 2>/dev/null || echo none))"
+    have glib-compile-resources || die "glib-compile-resources is required (glib development tools)"
+
     (
         cd "$TMP/src"
         # Name the build like the CI artifacts do (<version>.YYYYMMDD.<commit>) so the next run can compare.
         "$MAKEBIN" CC="$CCBIN" PKG_VERSION="$VERSION" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
-        SUDO=""
-        TARGET="${PREFIX:-/usr/local}"
-        if [ "$(id -u)" != 0 ] && { [ ! -d "$TARGET" ] || [ ! -w "$TARGET" ]; }; then
-            for c in sudo doas; do have "$c" && { SUDO="$c"; break; }; done
-        fi
         $SUDO "$MAKEBIN" CC="$CCBIN" PKG_VERSION="$VERSION" PREFIX="$TARGET" install
     )
 }
