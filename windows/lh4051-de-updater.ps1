@@ -15,7 +15,9 @@
     beta-dev      ... of the beta branch
     lts-dev       ... of the lts branch
     0.1-dev       ... of the branch that carries release line 0.1
-  CI builds are GitHub Actions artifacts, which need a token: set GH_TOKEN (a personal access token).
+  CI builds come from the branch's rolling release (tag ci-<branch>), which needs no token. If there is none yet, the
+  raw GitHub Actions artifacts are used (set GH_TOKEN to a personal access token).
+  stable / lts: while the line has no tagged release yet, the newest CI build of its branch is used instead.
   Needs PowerShell 3.0 or newer (Windows 7: install WMF 5.1).
 .PARAMETER Mode   see above
 .PARAMETER Check  only report whether an update is available
@@ -37,7 +39,8 @@ $AppId = '{6E0C1B0A-4051-4B1D-9C42-4C48344F5330}_is1'   # Inno Setup uninstall k
 # Windows 7/8/8.1 do not enable TLS 1.2 for .NET by default, and GitHub requires it.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch { }
 
-function Fail($msg) { throw $msg }
+# A plain message and exit code instead of a PowerShell stack trace.
+function Fail($msg) { Write-Host "error: $msg" -ForegroundColor Red; exit 1 }
 
 $arch = $env:PROCESSOR_ARCHITEW6432
 if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
@@ -177,7 +180,7 @@ $installed = Get-InstalledVersion
 Write-Host "LH4051-DE Updater  (mode: $Mode, windows/$Arch)"
 Write-Host ("Installed version: " + $(if ($installed) { $installed } else { 'none found' }))
 
-$version = $null; $assetUrl = $null; $branch = $null; $isArtifact = $false
+$version = $null; $assetUrl = $null; $branch = $null; $isArtifact = $false; $sha = $null
 
 # ---- release lookup -------------------------------------------------------------------------
 if ($Kind -ne 'branch') {
@@ -196,9 +199,16 @@ if ($Kind -ne 'branch') {
     }
     if (-not $best) {
         if ($Kind -eq 'exact') { Fail "release $WantExact does not exist" }
-        if ($Channel -eq 'lts') { Fail ("no LTS release found" + $(if ($WantLine) { " for line $WantLine" }) + "; LTS lines: " + ((Lines-With 'lts') -join ' ')) }
-        Fail "no $Channel release has been published yet"
+        if ($Channel -eq 'stable' -or $Channel -eq 'lts') {
+            # No vX.Y.Z tag has been released for this line yet: use the newest CI build of its branch.
+            $branch = if ($WantLine) { Branch-OfLine $WantLine } else { Branch-OfChannel $Channel }
+            if (-not $branch) { Fail "no $Channel release has been published yet, and no branch is listed for it" }
+            Write-Host "No $Channel release has been tagged yet; using the newest CI build of the '$branch' branch."
+            $Kind = 'branch'
+        } else { Fail "no $Channel release has been published yet" }
     }
+}
+if ($Kind -ne 'branch') {
     $line = Get-Line $best.tag_name
     if ($Kind -eq 'exact') {
         if ($best.prerelease) { if (-not ((Line-Has $line 'beta') -or (Line-Supported $line))) { Fail "release $($best.tag_name) is not supported (line $line)" } }
@@ -215,31 +225,49 @@ if ($Kind -ne 'branch') {
 }
 # ---- CI build lookup ------------------------------------------------------------------------
 else {
-    if ($WantLine) {
-        $branch = Branch-OfLine $WantLine
-        if (-not $branch) { Fail "release line $WantLine is not listed in supported-releases.txt" }
-    } else {
-        $branch = Branch-OfChannel $Channel
-        if (-not $branch) { $branch = if ($Channel -eq 'dev') { 'main' } else { $Channel } }
+    if (-not $branch) {
+        if ($WantLine) {
+            $branch = Branch-OfLine $WantLine
+            if (-not $branch) { Fail "release line $WantLine is not listed in supported-releases.txt" }
+        } else {
+            $branch = Branch-OfChannel $Channel
+            if (-not $branch) { $branch = if ($Channel -eq 'dev') { 'main' } else { $Channel } }
+        }
     }
     if ($branch -notmatch '^[A-Za-z0-9._/+-]+$') { Fail "unsafe branch name: $branch" }
-    if (-not $token) { Fail "CI builds ($Mode) are GitHub Actions artifacts and need a token: set GH_TOKEN to a GitHub personal access token. (Releases such as 'stable' need none.)" }
-    $runs = Get-Json "$Api/actions/runs?branch=$branch&status=success&per_page=1"
-    if (-not $runs.workflow_runs -or @($runs.workflow_runs).Count -eq 0) { Fail "branch '$branch' has no successful build yet" }
-    $run = @($runs.workflow_runs)[0]
-    $sha = $run.head_sha
-    $base = $null
-    $h = Get-Text "$Raw/$sha/src/longhorn.h"
-    if ($h -and $h -match '#define LH4051_VERSION "([^"]+)"') { $base = $Matches[1] }
-    $commit = Get-Json "$Api/commits/$sha"
-    $day = ([string]$commit.commit.committer.date).Substring(0, 10).Replace('-', '')
-    if (-not $base -or -not $day) { Fail "could not work out the version of build $sha on $branch" }
-    $version = "$base.$day.$($sha.Substring(0, 7))"
-    $arts = Get-Json "$Api/actions/runs/$($run.id)/artifacts"
-    $art = $arts.artifacts | Where-Object { $_.name -eq "lh4051-de-windows-$Arch" -and -not $_.expired } | Select-Object -First 1
-    if (-not $art) { Fail "build $($run.id) has no windows-$Arch artifact" }
-    $assetUrl = $art.archive_download_url
-    $isArtifact = $true
+
+    # 1. the rolling release "ci-<branch>": public, no token needed
+    $rolling = $null
+    try { $rolling = Invoke-RestMethod -Uri "$Api/releases/tags/ci-$($branch -replace '/', '-')" -Headers (Get-Headers $true) -UseBasicParsing } catch { }
+    if ($rolling -and $rolling.assets) {
+        $info = $rolling.assets | Where-Object { $_.name -eq 'ci-build.txt' } | Select-Object -First 1
+        $txt = if ($info) { Get-Text $info.browser_download_url } else { $null }
+        if ($txt -and $txt -match '(?m)^version=(\S+)' ) {
+            $version = $Matches[1]
+            $asset = $rolling.assets | Where-Object { $_.name -match "^LH4051-DE-Installer-.*-win-$Arch\.exe$" } | Select-Object -First 1
+            if ($asset) { $assetUrl = $asset.browser_download_url }
+        }
+    }
+    # 2. raw Actions artifacts (token required)
+    if (-not $assetUrl) {
+        if (-not $token) { Fail "there is no rolling CI release for '$branch' yet, and CI artifacts need a GitHub token: set GH_TOKEN to a personal access token. (Releases such as 'stable' need none.)" }
+        $runs = Get-Json "$Api/actions/runs?branch=$branch&status=success&per_page=1"
+        if (-not $runs.workflow_runs -or @($runs.workflow_runs).Count -eq 0) { Fail "branch '$branch' has no successful build yet" }
+        $run = @($runs.workflow_runs)[0]
+        $sha = $run.head_sha
+        $base = $null
+        $h = Get-Text "$Raw/$sha/src/longhorn.h"
+        if ($h -and $h -match '#define LH4051_VERSION "([^"]+)"') { $base = $Matches[1] }
+        $commit = Get-Json "$Api/commits/$sha"
+        $day = ([string]$commit.commit.committer.date).Substring(0, 10).Replace('-', '')
+        if (-not $base -or -not $day) { Fail "could not work out the version of build $sha on $branch" }
+        $version = "$base.$day.$($sha.Substring(0, 7))"
+        $arts = Get-Json "$Api/actions/runs/$($run.id)/artifacts"
+        $art = $arts.artifacts | Where-Object { $_.name -eq "lh4051-de-windows-$Arch" -and -not $_.expired } | Select-Object -First 1
+        if (-not $art) { Fail "build $($run.id) has no windows-$Arch artifact" }
+        $assetUrl = $art.archive_download_url
+        $isArtifact = $true
+    }
 }
 Write-Host ("Available ($Mode): $version" + $(if ($branch) { "  [branch $branch]" }))
 
