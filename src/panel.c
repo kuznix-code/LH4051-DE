@@ -11,7 +11,10 @@ static void update_clock_label(void)
     char *text, *tip;
     if (!clock_label) return;
     now = g_date_time_new_now_local();
-    text = g_date_time_format(now, lh4051_prefs_get(LH_PREF_CLOCK_24H) ? "%H:%M" : "%-I:%M %p");
+    {
+        gboolean h24 = lh4051_prefs_get(LH_PREF_CLOCK_24H), sec = lh4051_prefs_get(LH_PREF_CLOCK_SECONDS);
+        text = g_date_time_format(now, h24 ? (sec ? "%H:%M:%S" : "%H:%M") : (sec ? "%-I:%M:%S %p" : "%-I:%M %p"));
+    }
     tip = g_date_time_format(now, "%A, %B %-d, %Y");
     gtk_label_set_text(GTK_LABEL(clock_label), text);
     gtk_widget_set_tooltip_text(clock_label, tip);
@@ -59,6 +62,15 @@ static void rebuild_tasks(void *data)
     }
 }
 
+static void show_desktop_clicked(GtkButton *b, gpointer d)
+{
+    (void)b; (void)d;
+    for (guint i = 0; i < lh4051_wm_count(); i++) {
+        GtkWindow *w = lh4051_wm_get_window(i);
+        if (w) gtk_window_minimize(w);
+    }
+}
+
 static void start_clicked(GtkButton *b, gpointer d)
 {
     (void)b; (void)d;
@@ -95,6 +107,7 @@ GtkWidget *lh4051_panel_new(GtkApplication *app)
     GtkWidget *orb = gtk_label_new("");
     GtkWidget *quick = gtk_button_new_from_icon_name("system-file-manager");
     GtkWidget *tray = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *desk = gtk_button_new_from_icon_name("user-desktop");
 
     gtk_widget_add_css_class(bar, "lh-panel");
 
@@ -110,6 +123,11 @@ GtkWidget *lh4051_panel_new(GtkApplication *app)
     gtk_widget_set_tooltip_text(quick, "Open My Documents");
     g_signal_connect(quick, "clicked", G_CALLBACK(explorer_clicked), app);
     gtk_box_append(GTK_BOX(bar), quick);
+
+    gtk_widget_add_css_class(desk, "lh-quick");
+    gtk_widget_set_tooltip_text(desk, "Show Desktop");
+    g_signal_connect(desk, "clicked", G_CALLBACK(show_desktop_clicked), NULL);
+    gtk_box_append(GTK_BOX(bar), desk);
 
     task_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_hexpand(task_box, TRUE);

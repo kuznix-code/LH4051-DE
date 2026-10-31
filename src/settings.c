@@ -123,6 +123,7 @@ void lh4051_settings_open(GtkApplication *app)
 
     c = card("Taskbar & Sidebar", "Taskbar clock and sidebar behavior.");
     gtk_box_append(GTK_BOX(c), pref_check("Use 24-hour clock", LH_PREF_CLOCK_24H));
+    gtk_box_append(GTK_BOX(c), pref_check("Show seconds in the clock", LH_PREF_CLOCK_SECONDS));
     gtk_box_append(GTK_BOX(c), pref_check("Show sidebar", LH_PREF_SIDEBAR));
     gtk_box_append(GTK_BOX(box), c);
 

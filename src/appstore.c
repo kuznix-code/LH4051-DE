@@ -1319,7 +1319,7 @@ void lh4051_appstore_open(GtkApplication *app)
     iscroll = gtk_scrolled_window_new();
     rlabel = gtk_label_new("Search results");
     ilabel = gtk_label_new("Installed applications");
-    title = gtk_label_new("LH4051 App Store");
+    title = gtk_label_new("App Store");
     body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     pm_label = gtk_label_new("Package manager:");
 
@@ -1344,6 +1344,12 @@ void lh4051_appstore_open(GtkApplication *app)
     gtk_widget_add_css_class(header, "lh-store-header");
     gtk_widget_add_css_class(title, "lh-store-title");
     gtk_widget_add_css_class(status, "lh-store-status");
+    gtk_widget_add_css_class(row, "lh-store-searchbar");
+    gtk_widget_add_css_class(pm_row, "lh-store-pmrow");
+    gtk_widget_add_css_class(pm_label, "lh-store-pmlabel");
+    gtk_widget_add_css_class(body, "lh-store-body");
+    gtk_widget_add_css_class(rscroll, "lh-store-pane");
+    gtk_widget_add_css_class(iscroll, "lh-store-pane");
     gtk_widget_add_css_class(rlabel, "lh-store-section");
     gtk_widget_add_css_class(ilabel, "lh-store-section");
     gtk_widget_add_css_class(entry, "lh-store-search");
@@ -1371,13 +1377,13 @@ void lh4051_appstore_open(GtkApplication *app)
     gtk_widget_set_vexpand(body, TRUE);
     gtk_box_append(GTK_BOX(body), rlabel);
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(results), GTK_SELECTION_NONE);
-    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(results), 2);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(results), 1);
     gtk_widget_set_vexpand(rscroll, TRUE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(rscroll), results);
     gtk_box_append(GTK_BOX(body), rscroll);
     gtk_box_append(GTK_BOX(body), ilabel);
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(installed), GTK_SELECTION_NONE);
-    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(installed), 2);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(installed), 1);
     gtk_widget_set_vexpand(iscroll, TRUE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(iscroll), installed);
     gtk_box_append(GTK_BOX(body), iscroll);

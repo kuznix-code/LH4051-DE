@@ -58,6 +58,7 @@ typedef enum {
     LH_PREF_WATERMARK,
     LH_PREF_SIDEBAR,
     LH_PREF_CLOCK_24H,
+    LH_PREF_CLOCK_SECONDS,
     LH_PREF_COUNT
 } LHPref;
 typedef void (*LHPrefsFunc)(gpointer user_data);

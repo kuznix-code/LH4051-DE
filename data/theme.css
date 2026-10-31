@@ -161,26 +161,46 @@ button.lh-colhead:hover { background-color: #e1ecf7; }
 .lh-card-title { font-size: 13pt; font-weight: bold; color: #334b5c; }
 .lh-card-desc { color: #52636e; }
 
-/* ---------- app store ---------- */
-.lh-store { background-color: #11161b; color: #e8edf1; }
-.lh-store-header { padding: 18px 22px; background-image: linear-gradient(135deg, #1b2a35, #12171c); border-bottom: 1px solid #34414b; }
-.lh-store-title { font-size: 18pt; font-weight: bold; }
-.lh-store-status { color: #9fb0ba; }
-.lh-store-section { font-weight: bold; padding: 6px 2px; color: #c7d6df; font-size: 11pt; }
-.lh-store-search { min-height: 38px; background-color: #20282f; color: #edf3f7; border: 1px solid #46535e; }
-button.lh-store-search-button { min-height: 38px; padding: 0 20px; background-image: none; background-color: #2d6d98; color: white; border: 1px solid #4d88ad; }
-.lh-store-app-card { margin: 4px; padding: 12px; border-radius: 9px; background-color: #1c2228; border: 1px solid #35414a; }
-.lh-store-app-card:hover { background-color: #222a31; border-color: #4b6170; }
-.lh-store-icon-box { min-width: 60px; min-height: 60px; padding: 4px; border-radius: 10px; background-color: #11171c; border: 1px solid #33404a; }
-.lh-store-app-name { font-size: 12pt; font-weight: bold; color: #edf3f7; }
-.lh-store-app-summary { color: #aebbc4; }
+/* ---------- app store (PDC 2003 Longhorn 4051 look: pale glass, blue banner, flat list rows) ---------- */
+.lh-store { background-color: #f4f7fa; color: @lh_ink; }
+.lh-store-header {
+    padding: 14px 20px 12px 20px; color: white;
+    background-image: linear-gradient(90deg, #1d4f91 0%, #2f6fb5 45%, #8fc0ea 100%);
+    border-bottom: 1px solid #1a3f73; box-shadow: inset 0 -1px 0 rgba(255,255,255,.35);
+}
+.lh-store-title { font-size: 20pt; font-weight: 300; color: white; text-shadow: 0 1px 3px rgba(0,0,0,.45); }
+.lh-store-status { color: rgba(255,255,255,.9); }
+.lh-store-pmlabel { color: white; text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+.lh-store-header dropdown button, .lh-store-header dropdown { color: @lh_ink; }
+.lh-store-search { min-height: 30px; background-color: white; color: @lh_ink; border: 1px solid #7f9db9; border-radius: 3px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.18); }
+button.lh-store-search-button {
+    min-height: 30px; padding: 0 18px; border-radius: 3px; color: @lh_ink; text-shadow: 0 1px 0 rgba(255,255,255,.6);
+    border: 1px solid #5e7f9f; box-shadow: inset 0 1px 0 rgba(255,255,255,.8);
+    background-image: linear-gradient(180deg, #f6fafe 0%, #d6e4f3 48%, #bdd0e4 52%, #cfe0f1 100%);
+}
+button.lh-store-search-button:hover { background-image: linear-gradient(180deg, #ffffff 0%, #e3eefa 48%, #cfe0f1 52%, #dce9f6 100%); }
+.lh-store-body { background-color: #f4f7fa; }
+.lh-store-pane { background-color: white; border: 1px solid @lh_line; border-radius: 3px; }
+.lh-store-section { font-weight: bold; padding: 4px 2px 2px 2px; color: #1d4f91; font-size: 11pt;
+    border-bottom: 1px solid #b6c9dd; }
+.lh-store-app-card { margin: 0; padding: 8px 10px; border-radius: 0; background-color: white; border-bottom: 1px solid #e1e8ef; }
+.lh-store-app-card:hover { background-image: linear-gradient(180deg, #f3f8fd, #dfeaf7); }
+.lh-store-icon-box { min-width: 56px; min-height: 56px; padding: 3px; border-radius: 4px;
+    background-image: linear-gradient(180deg, #ffffff, #e4ecf4); border: 1px solid #aebfd0; }
+.lh-store-app-name { font-size: 11pt; font-weight: bold; color: #1d4f91; }
+.lh-store-app-summary { color: #4a5a68; }
+.lh-store-app-card button { min-height: 22px; padding: 0 12px; border-radius: 3px; color: @lh_ink; text-shadow: 0 1px 0 rgba(255,255,255,.6);
+    border: 1px solid #7f9bb7; box-shadow: inset 0 1px 0 rgba(255,255,255,.8);
+    background-image: linear-gradient(180deg, #f6fafe, #d3e2f2 50%, #bfd2e6 52%, #d0e0f0); }
+.lh-store-app-card button:hover { background-image: linear-gradient(180deg, #ffffff, #e2edf9 50%, #cddff0 52%, #dbe8f6); border-color: #3c7fb1; }
 
 /* ---------- package operation ---------- */
-.lh-operation { background-color: #10151a; color: #e8eef2; }
-.lh-operation-title { font-size: 15pt; font-weight: bold; color: #f1f5f7; }
-.lh-operation-detail, .lh-operation-status { color: #aebbc4; }
-.lh-operation-success { color: #72d69a; }
-.lh-operation-failed { color: #ff817b; }
-textview.lh-terminal, textview.lh-terminal text { background-color: #080b0e; color: #d5e3d9; font-family: monospace; font-size: 10pt; }
+.lh-operation { background-color: #f4f7fa; color: @lh_ink; }
+.lh-operation-title { font-size: 15pt; font-weight: 300; color: #1d4f91; }
+.lh-operation-detail, .lh-operation-status { color: #4a5a68; }
+.lh-operation-success { color: #1f7a3d; }
+.lh-operation-failed { color: #b3261e; }
+textview.lh-terminal, textview.lh-terminal text { background-color: #0c1620; color: #d5e3d9; font-family: monospace; font-size: 10pt; }
 
 scrollbar slider { min-width: 8px; min-height: 8px; }
