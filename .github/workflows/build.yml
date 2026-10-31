@@ -144,7 +144,8 @@ jobs:
           - { name: musl-riscv64,  platform: linux/riscv64, image: "alpine:edge", pm: apk, dist: musl-riscv64,      skip: "0" }
           - { name: musl-ppc64el,  platform: linux/ppc64le, image: "alpine:edge", pm: apk, dist: musl-ppc64el,      skip: "0" }
           - { name: musl-s390x,    platform: linux/s390x,   image: "alpine:edge", pm: apk, dist: musl-s390x,        skip: "0" }
-          - { name: musl-loong64,  platform: linux/loong64, image: "alpine:edge", pm: apk, dist: musl-loongarch64,   skip: "0" }
+          # Docker Hub's alpine has no loongarch64 image: import Alpine's own minirootfs (rootfs = its releases directory).
+          - { name: musl-loong64,  platform: linux/loong64, image: "alpine-local:edge", rootfs: loongarch64, pm: apk, dist: musl-loongarch64, skip: "0" }
           - { name: x86,        platform: linux/386,     image: "debian:trixie",  pm: apt, dist: i686,        skip: "0" }
           - { name: riscv64,    platform: linux/riscv64, image: "debian:trixie",  pm: apt, dist: riscv64,     skip: "0" }
           - { name: ppc64el,    platform: linux/ppc64le, image: "debian:trixie",  pm: apt, dist: ppc64el,     skip: "0" }
@@ -155,6 +156,14 @@ jobs:
       - name: Artifact version
         run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - uses: docker/setup-qemu-action@v3
+      - name: Import the Alpine root filesystem (${{ matrix.rootfs }})
+        if: matrix.rootfs != ''
+        run: |
+          base="https://dl-cdn.alpinelinux.org/alpine/edge/releases/${{ matrix.rootfs }}"
+          file="$(curl -fsSL "$base/latest-releases.yaml" | sed -n 's/^ *file: *\(alpine-minirootfs-.*\.tar\.gz\) *$/\1/p' | head -n 1)"
+          [ -n "$file" ] || { echo "::error::no Alpine minirootfs for ${{ matrix.rootfs }}"; exit 1; }
+          curl -fsSLO "$base/$file"
+          docker import --platform ${{ matrix.platform }} "$file" ${{ matrix.image }}
       - name: Build in ${{ matrix.image }} (${{ matrix.platform }})
         run: |
           docker run --rm --platform ${{ matrix.platform }} \
