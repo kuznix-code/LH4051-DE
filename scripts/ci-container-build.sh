@@ -6,6 +6,7 @@
 #   PKG_VERSION=...   version for the file names (from scripts/pkg-version.sh on the host)
 #   ALLOW_SKIP=1      exit successfully, without packaging, when the distribution has no GTK 4.10+
 #   MARCH=...         optional -march for the build
+#   NEEDS="f1 f2"     CPU flags the build needs; the smoke test is skipped (build and package still happen) if /proc/cpuinfo lacks them
 #
 # Run from the repository root.
 set -eu
@@ -40,6 +41,12 @@ fi
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
 make TARGET_OS=linux ${MARCH:+MARCH="$MARCH"} show-config
 make TARGET_OS=linux ${MARCH:+MARCH="$MARCH"} -j"$JOBS" all
-./build/linux-gcc/lh4051-de --version
+missing=""
+for f in ${NEEDS:-}; do grep -qw "$f" /proc/cpuinfo 2>/dev/null || missing="$missing $f"; done
+if [ -n "$missing" ]; then
+    echo "::notice::This runner's CPU lacks:$missing - built but not run."
+else
+    ./build/linux-gcc/lh4051-de --version
+fi
 make TARGET_OS=linux ${MARCH:+MARCH="$MARCH"} DIST_ARCH="$DIST_ARCH" dist-linux installer-unix
 ls -l dist

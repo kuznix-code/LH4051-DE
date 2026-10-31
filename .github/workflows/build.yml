@@ -131,9 +131,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: musl-x64,   platform: linux/amd64,   image: "alpine:edge",    pm: apk, dist: musl-x86_64, skip: "0" }
-          - { name: musl-x86,   platform: linux/386,     image: "alpine:edge",    pm: apk, dist: musl-i686,   skip: "0" }
-          - { name: musl-arm64, platform: linux/arm64,   image: "alpine:edge",    pm: apk, dist: musl-arm64,  skip: "0" }
+          # Alpine (musl): every architecture Alpine edge supports. x86-64 levels run natively (needs = CPU flags to run the smoke test).
+          - { name: musl-x64,      platform: linux/amd64,   image: "alpine:edge", pm: apk, dist: musl-x86_64,       skip: "0" }
+          - { name: musl-x64-v2,   platform: linux/amd64,   image: "alpine:edge", pm: apk, dist: musl-x86_64-v2,    skip: "0", march: x86-64-v2, needs: "ssse3 sse4_1 sse4_2 popcnt cx16" }
+          - { name: musl-x64-v3,   platform: linux/amd64,   image: "alpine:edge", pm: apk, dist: musl-x86_64-v3,    skip: "0", march: x86-64-v3, needs: "avx2 bmi1 bmi2 fma movbe abm f16c" }
+          - { name: musl-x64-v4,   platform: linux/amd64,   image: "alpine:edge", pm: apk, dist: musl-x86_64-v4,    skip: "0", march: x86-64-v4, needs: "avx512f avx512bw avx512cd avx512dq avx512vl" }
+          - { name: musl-x64-zen4, platform: linux/amd64,   image: "alpine:edge", pm: apk, dist: musl-x86_64-zen4,  skip: "0", march: znver4,    needs: "avx512f avx512_bf16 avx512_vbmi2" }
+          - { name: musl-x86,      platform: linux/386,     image: "alpine:edge", pm: apk, dist: musl-i686,         skip: "0" }
+          - { name: musl-arm64,    platform: linux/arm64,   image: "alpine:edge", pm: apk, dist: musl-arm64,        skip: "0" }
+          - { name: musl-armv7,    platform: linux/arm/v7,  image: "alpine:edge", pm: apk, dist: musl-armv7,        skip: "0" }
+          - { name: musl-armhf,    platform: linux/arm/v6,  image: "alpine:edge", pm: apk, dist: musl-armv6,        skip: "0" }
+          - { name: musl-riscv64,  platform: linux/riscv64, image: "alpine:edge", pm: apk, dist: musl-riscv64,      skip: "0" }
+          - { name: musl-ppc64el,  platform: linux/ppc64le, image: "alpine:edge", pm: apk, dist: musl-ppc64el,      skip: "0" }
+          - { name: musl-s390x,    platform: linux/s390x,   image: "alpine:edge", pm: apk, dist: musl-s390x,        skip: "0" }
+          - { name: musl-loong64,  platform: linux/loong64, image: "alpine:edge", pm: apk, dist: musl-loongarch64,   skip: "0" }
           - { name: x86,        platform: linux/386,     image: "debian:trixie",  pm: apt, dist: i686,        skip: "0" }
           - { name: riscv64,    platform: linux/riscv64, image: "debian:trixie",  pm: apt, dist: riscv64,     skip: "0" }
           - { name: ppc64el,    platform: linux/ppc64le, image: "debian:trixie",  pm: apt, dist: ppc64el,     skip: "0" }
@@ -148,6 +159,7 @@ jobs:
         run: |
           docker run --rm --platform ${{ matrix.platform }} \
             -e PKG_VERSION -e PM=${{ matrix.pm }} -e DIST_ARCH=${{ matrix.dist }} -e ALLOW_SKIP=${{ matrix.skip }} \
+            -e MARCH="${{ matrix.march }}" -e NEEDS="${{ matrix.needs }}" \
             -v "$PWD:/src" -w /src ${{ matrix.image }} sh scripts/ci-container-build.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -316,11 +328,11 @@ jobs:
         run: ./build/windows-legacy/lh4051-de.exe --version
       - name: Scan the executable for post-Windows-7 imports
         run: sh scripts/check-win7.sh build/windows-legacy/lh4051-de.exe
+      # The MSYS2 GTK runtime itself needs Windows 8/8.1 APIs; LH4051-DE cannot change that. Reported as warnings.
       - name: Scan the GTK runtime (informational)
-        continue-on-error: true
         run: |
           sh scripts/bundle-win.sh build/windows-legacy/lh4051-de.exe dist/legacy-bundle x86_64-w64-mingw32 || true
-          sh scripts/check-win7.sh dist/legacy-bundle
+          sh scripts/check-win7.sh --warn dist/legacy-bundle
 
   # ----------------------------------------------------------------- MSVC
   # Experimental: cl.exe + a prebuilt GTK4 from gvsbuild. GNU make and a

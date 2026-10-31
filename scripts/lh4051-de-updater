@@ -16,7 +16,7 @@
 #   lts-dev        ... on the lts branch
 #   0.1-dev        ... on the branch that carries release line 0.1
 #
-# x86-64 variants (Linux, glibc): the default build is the baseline (v1) that runs on every x86-64 PC. Faster builds
+# x86-64 variants (Linux, glibc and musl): the default build is the baseline (v1) that runs on every x86-64 PC. Faster builds
 # for newer CPUs are chosen explicitly, never automatically:  --variant v2|v3|v4|zen4  (or  MODE:VARIANT, e.g. stable:v3,
 # or LH4051_UPDATE_VARIANT, or "variant=v3" in the config file). The CPU is checked first.
 #   v2    SSE4.2, POPCNT          (Nehalem / 2009+)
@@ -37,7 +37,7 @@
 #   any other OS or architecture (or --source): download the source and build it.
 #   That needs GTK 4.10+ development files, a C compiler, GNU Make and pkg-config.
 #   Prebuilt installers exist for: Linux glibc x86_64 (+v2/v3/v4/zen4), arm64, i686, armv7, riscv64, ppc64el, s390x;
-#   Linux musl x86_64, i686, arm64; macOS x86_64/arm64; FreeBSD x86_64. Everything else is built from source.
+#   Linux musl x86_64 (+v2/v3/v4/zen4), i686, arm64, armv7, armv6, riscv64, ppc64el, s390x, loongarch64; macOS x86_64/arm64; FreeBSD x86_64. Everything else is built from source.
 #
 # Linux From Scratch and other systems without GTK 4: --bootstrap (also offered automatically when GTK 4.10+ is
 # missing, and implied on LFS) first builds the latest versions of GTK 4 and everything it needs (zlib, libffi, GLib,
@@ -114,6 +114,7 @@ case "${LH4051_ARCH:-$(uname -m)}" in
     i386|i486|i586|i686)     ARCH=i686 ;;
     aarch64|arm64)           ARCH=arm64 ;;
     armv7l|armv7|armv8l)     ARCH=armv7 ;;
+    armv6l|armv6)            ARCH=armv6 ;;
     ppc64le|ppc64el)         ARCH=ppc64el ;;
     ppc64)                   ARCH=ppc64 ;;
     ppc|ppc32|powerpc)       ARCH=ppc ;;
@@ -139,17 +140,16 @@ case "$LIBC" in glibc|musl) ;; *) die "LH4051_LIBC must be glibc or musl" ;; esa
 BINARY_OK=0
 case "$OS_RAW" in Linux|Darwin|FreeBSD) BINARY_OK=1 ;; esac
 if [ "$OS_RAW" = Linux ] && [ "$LIBC" = musl ]; then
-    case "$ARCH" in x86_64|i686|arm64) ;; *) BINARY_OK=0 ;; esac
+    case "$ARCH" in x86_64|i686|arm64|armv7|armv6|riscv64|ppc64el|s390x|loongarch64) ;; *) BINARY_OK=0 ;; esac
 fi
 
 # No installer exists for mips64el (Debian dropped it, so CI has no container with GTK 4.10+): build from source.
 [ "$OS_RAW" = Linux ] && [ "$ARCH" = mips64el ] && BINARY_OK=0
 
-# Variants exist for glibc x86-64 only.
+# Variants exist for x86-64 Linux only (glibc and musl).
 if [ -n "$VARIANT" ]; then
     [ "$OS_RAW" = Linux ] && [ "$ARCH" = x86_64 ] || die "variant '$VARIANT' exists for Linux x86_64 only"
-    [ "$LIBC" = glibc ] || die "variant '$VARIANT' is not built for musl; use the default build"
-fi
+    fi
 
 # cpu_missing VARIANT -> names the CPU features /proc/cpuinfo does not list
 cpu_missing() {

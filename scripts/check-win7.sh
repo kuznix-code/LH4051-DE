@@ -1,9 +1,13 @@
 #!/bin/sh
-# check-win7.sh <dir-or-exe>...
+# check-win7.sh [--warn] <dir-or-exe>...
 # Reports imported Windows APIs that do not exist on Windows 7 / 8 / 8.1 in an exe or in every
 # .exe/.dll under a directory (e.g. a bundled GTK runtime). Exit status 1 if any were found.
 # Uses objdump (binutils or llvm-objdump); the list is a deliberate sample of common newer APIs.
+# --warn: informational mode for the bundled GTK/MSYS2 runtime, whose DLLs we cannot change. Findings are printed as
+#         GitHub Actions warnings (one summary per DLL) and the exit status stays 0.
 set -eu
+WARN=0
+if [ "${1:-}" = "--warn" ]; then WARN=1; shift; fi
 OBJDUMP="${OBJDUMP:-objdump}"
 command -v "$OBJDUMP" >/dev/null 2>&1 || OBJDUMP=llvm-objdump
 command -v "$OBJDUMP" >/dev/null 2>&1 || { echo "check-win7: objdump not found" >&2; exit 2; }
@@ -44,10 +48,16 @@ for f in $files; do
     for entry in $NEWER; do
         api="${entry%%:*}"; since="${entry##*:}"
         if printf '%s\n' "$imports" | grep -qx "$api"; then
-            echo "$f imports $api (needs Windows $since or newer)"
+            if [ "$WARN" = 1 ]; then found="${found:-}$api(Windows $since) "
+            else echo "$f imports $api (needs Windows $since or newer)"; fi
             status=1
         fi
     done
+    if [ "$WARN" = 1 ] && [ -n "${found:-}" ]; then
+        echo "::warning title=Not Windows 7 compatible::$f imports ${found}"
+        found=""
+    fi
 done
 [ $status = 0 ] && echo "check-win7: no imports newer than Windows 7 found in $(echo "$files" | wc -l) file(s)"
+[ "$WARN" = 1 ] && exit 0
 exit $status
