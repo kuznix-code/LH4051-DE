@@ -72,7 +72,8 @@ rpm)
 arch)
     # pacman's download sandbox (Landlock) does not work inside containers; CheckSpace cannot see the mount.
     PM="pacman --noconfirm --needed"
-    if pacman --help 2>&1 | grep -q -- --disable-sandbox; then PM="$PM --disable-sandbox"; fi
+    # (--disable-sandbox is not listed in --help on every pacman 7.x, so probe it instead of grepping.)
+    if pacman --disable-sandbox --version >/dev/null 2>&1; then PM="$PM --disable-sandbox"; fi
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
     # Arch Linux ARM's root filesystem ships without an initialised keyring.
     if [ ! -s /etc/pacman.d/gnupg/pubring.kbx ] && [ ! -s /etc/pacman.d/gnupg/pubring.gpg ]; then
