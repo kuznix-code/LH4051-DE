@@ -92,7 +92,8 @@ arch)
     sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@ARCH@|$arch|g" \
         packaging/arch/PKGBUILD.in > "$bdir/PKGBUILD"
     chown -R builder: "$bdir"
-    su builder -c "cd '$bdir' && PKGDEST='$bdir/out' makepkg -f --nocolor --noconfirm"
+    su builder -c "cd '$bdir' && PKGDEST='$bdir/out' PKGEXT='.pkg.tar.zst' makepkg -f --nocolor --noconfirm"
+    ls -l "$bdir/out"
     for f in "$bdir"/out/*.pkg.tar.zst; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%-any.pkg.tar.zst}" != "$f" ]; then continue; fi
         cp "$f" "$OUT"/
