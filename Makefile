@@ -229,7 +229,7 @@ comma := ,
 # Targets
 # ---------------------------------------------------------------------------
 .PHONY: all linux macos bsd win64 win64-legacy msvc run clean distclean check-deps show-config help \
-        install uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
+        install install-bin install-data uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
         installer-unix installer-macos installer-win
 
 all: $(BIN)
@@ -365,7 +365,11 @@ $(APPS_OUT): $(APPS_SRC)
 	@mkdir -p $(@D)
 	@sed -e 's|@bindir@|$(PREFIX)/bin|g' -e 's|@version@|$(VERSION)|g' $< > $@
 
-install: all sessions $(APPS_OUT)
+# install = install-bin (program, helper scripts, version stamp) + install-data (desktop/session entries).
+# The split lets distribution packages ship the architecture-independent files as a separate "-data" package.
+install: install-bin install-data
+
+install-bin: all
 ifeq ($(UNIX_LIKE),)
 	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
 else
@@ -373,6 +377,12 @@ else
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-session,scripts/lh4051-de-session)
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-updater,scripts/lh4051-de-updater)
 	@mkdir -p "$(DESTDIR)$(PREFIX)/share/lh4051-de" && printf '%s\n' "$(PKG_VERSION)" > "$(DESTDIR)$(PREFIX)/share/lh4051-de/version"
+endif
+
+install-data: sessions $(APPS_OUT)
+ifeq ($(UNIX_LIKE),)
+	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
+else
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop,$(APPS_OUT))
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop,$(SESSION_DIR)/wayland-sessions/lh4051-de.desktop)
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop,$(SESSION_DIR)/xsessions/lh4051-de.desktop)
@@ -458,6 +468,7 @@ help:
 	@echo "  make msvc            MSVC build; needs GTK_PREFIX=<gvsbuild tree> and a VS developer prompt"
 	@echo "  make run [ARGS=-w]   build and run"
 	@echo "  make install         install to PREFIX (default /usr/local; DESTDIR supported)"
+	@echo "                       (install-bin = program + scripts, install-data = desktop/session entries)"
 	@echo "  make dist-unix       dist/lh4051-de-<ver>-<os>-<arch>.tar.gz (Linux, BSD, ...)"
 	@echo "  make dist-macos      dist/LH4051-DE.app + zip"
 	@echo "  make installer-unix  LH4051-DE Installer (.run) for Linux/BSD/unix"

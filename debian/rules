@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+# gtk4-layer-shell support is picked up by the Makefile (pkg-config) when its development
+# package is installed; it is not a hard build dependency.
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+include /usr/share/dpkg/buildflags.mk
+
+# Version stamp written to share/lh4051-de/version (read by lh4051-de-updater). CI passes the
+# project's own form (0.2.0.dev.YYYYMMDD.<commit>) in PKG_VERSION; otherwise it is derived
+# from the changelog (the Debian "~" pre-release marker becomes ".").
+PKG_VERSION ?= $(shell dpkg-parsechangelog -S Version | sed 's/~/./')
+export PKG_VERSION
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) PREFIX=/usr CFLAGS='$(CFLAGS) $(CPPFLAGS)' LDFLAGS='$(LDFLAGS)' all sessions
+
+override_dh_auto_install:
+	$(MAKE) PREFIX=/usr DESTDIR=$(CURDIR)/debian/tmp CFLAGS='$(CFLAGS) $(CPPFLAGS)' LDFLAGS='$(LDFLAGS)' install
+
+override_dh_auto_test:
+	./build/linux-gcc/lh4051-de --version
+
+override_dh_strip:
+	dh_strip --no-automatic-dbgsym
+
+override_dh_missing:
+	dh_missing --fail-missing

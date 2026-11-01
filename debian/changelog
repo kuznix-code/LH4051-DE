@@ -1,0 +1,6 @@
+lh4051-de (0.2.0~dev) UNRELEASED; urgency=medium
+
+  * Development snapshot. CI regenerates this entry for every build
+    (scripts/ci-package-build.sh).
+
+ -- kuznix-code <noreply@github.com>  Sun, 01 Nov 2026 00:00:00 +0000

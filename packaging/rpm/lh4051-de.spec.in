@@ -1,0 +1,70 @@
+# LH4051-DE RPM packages (built from source by scripts/ci-package-build.sh).
+# Placeholders: @VERSION@ (RPM-safe version, "~" marks pre-releases), @PKG_VERSION@ (version stamp), @DATE@ (changelog date).
+Name:           lh4051-de
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Longhorn 4051-inspired desktop environment
+License:        GPL-3.0-or-later
+URL:            https://github.com/kuznix-code/LH4051-DE
+Source0:        %{name}-%{version}.tar.gz
+
+BuildRequires:  gcc
+BuildRequires:  make
+BuildRequires:  pkgconfig
+BuildRequires:  pkgconfig(gtk4) >= 4.10
+BuildRequires:  glib2-devel
+BuildRequires:  gtk4-layer-shell-devel
+Requires:       lh4051-de-data = %{version}-%{release}
+Recommends:     labwc
+Suggests:       appstream
+
+# No debuginfo/debugsource subpackages; only the packages below are produced.
+%global debug_package %{nil}
+
+%description
+LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051, written
+in C on top of GTK 4. It provides the desktop, panel, sidebar, start menu, file
+manager, settings and app store, plus a session wrapper that starts a
+compositor and the shell.
+
+This package contains the shell, the session wrapper and the updater script.
+
+%package -n lh4051-de-data
+Summary:        Longhorn 4051-inspired desktop environment - data files
+BuildArch:      noarch
+
+%description -n lh4051-de-data
+Architecture-independent data files for LH4051-DE: the application menu entry
+and the Wayland and X11 session entries.
+
+%prep
+%autosetup -n %{name}-%{version}
+
+%build
+%make_build PREFIX=%{_prefix} PKG_VERSION=@PKG_VERSION@ \
+    CFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}" all sessions
+
+%check
+./build/linux-gcc/lh4051-de --version
+
+%install
+%make_install PREFIX=%{_prefix} PKG_VERSION=@PKG_VERSION@ \
+    CFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}"
+
+%files
+%license LICENSE
+%doc README.md
+%{_bindir}/lh4051-de
+%{_bindir}/lh4051-de-session
+%{_bindir}/lh4051-de-updater
+%{_datadir}/lh4051-de/
+
+%files -n lh4051-de-data
+%license LICENSE
+%{_datadir}/applications/lh4051-de.desktop
+%{_datadir}/wayland-sessions/lh4051-de.desktop
+%{_datadir}/xsessions/lh4051-de.desktop
+
+%changelog
+* @DATE@ kuznix-code <noreply@github.com> - @VERSION@-1
+- Automated build from the repository
