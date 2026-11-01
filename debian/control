@@ -1,0 +1,36 @@
+Source: lh4051-de
+Section: x11
+Priority: optional
+Maintainer: kuznix-code <noreply@github.com>
+Build-Depends: debhelper-compat (= 13),
+               libglib2.0-dev-bin,
+               libgtk-4-dev (>= 4.10),
+               pkgconf
+Standards-Version: 4.7.0
+Homepage: https://github.com/kuznix-code/LH4051-DE
+Rules-Requires-Root: no
+
+Package: lh4051-de
+Architecture: any
+Depends: lh4051-de-data (= ${source:Version}),
+         ${misc:Depends},
+         ${shlibs:Depends}
+Recommends: labwc
+Suggests: appstream
+Description: Longhorn 4051-inspired desktop environment
+ LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051,
+ written in C on top of GTK 4. It provides the desktop, panel, sidebar,
+ start menu, file manager, settings and app store, plus a session wrapper
+ that starts a compositor and the shell.
+ .
+ This package contains the shell, the session wrapper and the updater script.
+
+Package: lh4051-de-data
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: Longhorn 4051-inspired desktop environment - data files
+ LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051.
+ .
+ This package contains the architecture-independent data files: the
+ application menu entry and the Wayland and X11 session entries.

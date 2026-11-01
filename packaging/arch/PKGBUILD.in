@@ -1,0 +1,41 @@
+# LH4051-DE Arch Linux split package, built from the checked-out source by CI
+# (scripts/ci-package-build.sh). Placeholders: @PKGVER@ (pacman-safe version), @PKG_VERSION@ (version stamp),
+# @ARCH@ (x86_64 or aarch64).
+pkgbase=lh4051-de
+pkgname=(lh4051-de lh4051-de-data)
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc='Longhorn 4051-inspired desktop environment'
+arch=('@ARCH@')
+url='https://github.com/kuznix-code/LH4051-DE'
+license=('GPL-3.0-or-later')
+makedepends=('base-devel' 'pkgconf' 'gtk4' 'glib2' 'gtk4-layer-shell')
+options=('!debug')
+source=("$pkgbase-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgbase-$pkgver"
+    make PREFIX=/usr PKG_VERSION='@PKG_VERSION@' CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" all sessions
+}
+
+check() {
+    cd "$srcdir/$pkgbase-$pkgver"
+    ./build/linux-gcc/lh4051-de --version
+}
+
+package_lh4051-de() {
+    depends=('gtk4' 'glib2' "lh4051-de-data=$pkgver")
+    optdepends=('gtk4-layer-shell: native Wayland shell surfaces (layer-shell)'
+                'labwc: recommended Wayland compositor for the LH4051-DE session'
+                'appstream: App Store catalog search')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make DESTDIR="$pkgdir" PREFIX=/usr PKG_VERSION='@PKG_VERSION@' CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" install-bin
+}
+
+package_lh4051-de-data() {
+    pkgdesc='Longhorn 4051-inspired desktop environment - data files'
+    arch=('any')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make DESTDIR="$pkgdir" PREFIX=/usr PKG_VERSION='@PKG_VERSION@' install-data
+}
