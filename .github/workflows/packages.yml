@@ -1,7 +1,7 @@
 name: packages
 
 # Distribution packages built from source: .deb (Debian), .rpm (Fedora), .pkg.tar.zst (Arch Linux),
-# .apk (Alpine Linux, musl), for x86_64 and arm64, on the `main` and `stable` branches.
+# for x86_64 and arm64, on the `main` and `stable` branches.
 #
 #   lh4051-de        the shell, session wrapper and updater script (one per architecture)
 #   lh4051-de-data   architecture-independent data files (application menu entry)
@@ -45,9 +45,6 @@ jobs:
           #     filesystem is imported below (the runner is arm64, so nothing is emulated).
           - { format: arch, arch: x86_64, runner: ubuntu-latest,     image: "archlinux:base-devel",  data: "1", glob: "dist/*.pkg.tar.zst" }
           - { format: arch, arch: arm64,  runner: ubuntu-24.04-arm,  image: "alarm-local:latest",    data: "0", glob: "dist/*.pkg.tar.zst", rootfs: "ArchLinuxARM-aarch64-latest.tar.gz" }
-          # --- Alpine Linux (musl) packages, built with abuild in Alpine edge
-          - { format: apk,  arch: x86_64, runner: ubuntu-latest,     image: "alpine:edge",           data: "1", glob: "dist/*.apk" }
-          - { format: apk,  arch: arm64,  runner: ubuntu-24.04-arm,  image: "alpine:edge",           data: "0", glob: "dist/*.apk" }
     steps:
       - uses: actions/checkout@v4
       - name: Artifact version
