@@ -229,7 +229,7 @@ comma := ,
 # Targets
 # ---------------------------------------------------------------------------
 .PHONY: all linux macos bsd win64 win64-legacy msvc run clean distclean check-deps show-config help \
-        install install-bin install-data uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
+        install install-bin install-data install-session-x11 install-session-wayland uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
         installer-unix installer-macos installer-win
 
 all: $(BIN)
@@ -365,9 +365,11 @@ $(APPS_OUT): $(APPS_SRC)
 	@mkdir -p $(@D)
 	@sed -e 's|@bindir@|$(PREFIX)/bin|g' -e 's|@version@|$(VERSION)|g' $< > $@
 
-# install = install-bin (program, helper scripts, version stamp) + install-data (desktop/session entries).
-# The split lets distribution packages ship the architecture-independent files as a separate "-data" package.
-install: install-bin install-data
+# install = install-bin (program, helper scripts, version stamp) + install-data (application menu entry)
+#         + install-session-x11 + install-session-wayland (login manager session entries).
+# The split lets distribution packages ship the architecture-independent files as separate packages:
+#   lh4051-de-data, lh4051-de-session (X11), lh4051-de-session-wayland (Wayland).
+install: install-bin install-data install-session-x11 install-session-wayland
 
 install-bin: all
 ifeq ($(UNIX_LIKE),)
@@ -379,13 +381,25 @@ else
 	@mkdir -p "$(DESTDIR)$(PREFIX)/share/lh4051-de" && printf '%s\n' "$(PKG_VERSION)" > "$(DESTDIR)$(PREFIX)/share/lh4051-de/version"
 endif
 
-install-data: sessions $(APPS_OUT)
+install-data: $(APPS_OUT)
 ifeq ($(UNIX_LIKE),)
 	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
 else
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop,$(APPS_OUT))
-	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop,$(SESSION_DIR)/wayland-sessions/lh4051-de.desktop)
+endif
+
+install-session-x11: $(SESSION_DIR)/xsessions/lh4051-de.desktop
+ifeq ($(UNIX_LIKE),)
+	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
+else
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop,$(SESSION_DIR)/xsessions/lh4051-de.desktop)
+endif
+
+install-session-wayland: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop
+ifeq ($(UNIX_LIKE),)
+	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
+else
+	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop,$(SESSION_DIR)/wayland-sessions/lh4051-de.desktop)
 endif
 
 uninstall:
@@ -468,7 +482,8 @@ help:
 	@echo "  make msvc            MSVC build; needs GTK_PREFIX=<gvsbuild tree> and a VS developer prompt"
 	@echo "  make run [ARGS=-w]   build and run"
 	@echo "  make install         install to PREFIX (default /usr/local; DESTDIR supported)"
-	@echo "                       (install-bin = program + scripts, install-data = desktop/session entries)"
+	@echo "                       (install-bin = program + scripts, install-data = menu entry,"
+	@echo "                        install-session-x11 / install-session-wayland = login manager entries)"
 	@echo "  make dist-unix       dist/lh4051-de-<ver>-<os>-<arch>.tar.gz (Linux, BSD, ...)"
 	@echo "  make dist-macos      dist/LH4051-DE.app + zip"
 	@echo "  make installer-unix  LH4051-DE Installer (.run) for Linux/BSD/unix"

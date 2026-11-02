@@ -2,7 +2,7 @@
 # (scripts/ci-package-build.sh). Placeholders: @PKGVER@ (pacman-safe version), @PKG_VERSION@ (version stamp),
 # @ARCH@ (x86_64 or aarch64).
 pkgbase=lh4051-de
-pkgname=(lh4051-de lh4051-de-data)
+pkgname=(lh4051-de lh4051-de-data lh4051-de-session lh4051-de-session-wayland)
 pkgver=@PKGVER@
 pkgrel=1
 pkgdesc='Longhorn 4051-inspired desktop environment'
@@ -38,4 +38,21 @@ package_lh4051-de-data() {
     arch=('any')
     cd "$srcdir/$pkgbase-$pkgver"
     make DESTDIR="$pkgdir" PREFIX=/usr PKG_VERSION='@PKG_VERSION@' install-data
+}
+
+package_lh4051-de-session() {
+    pkgdesc='Longhorn 4051-inspired desktop environment - X11 session'
+    arch=('any')
+    # Default window manager for the X11 session (the session script tries openbox first).
+    depends=("lh4051-de=$pkgver" 'openbox')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make DESTDIR="$pkgdir" PREFIX=/usr PKG_VERSION='@PKG_VERSION@' install-session-x11
+}
+
+package_lh4051-de-session-wayland() {
+    pkgdesc='Longhorn 4051-inspired desktop environment - Wayland session'
+    arch=('any')
+    depends=("lh4051-de=$pkgver" 'labwc')
+    cd "$srcdir/$pkgbase-$pkgver"
+    make DESTDIR="$pkgdir" PREFIX=/usr PKG_VERSION='@PKG_VERSION@' install-session-wayland
 }

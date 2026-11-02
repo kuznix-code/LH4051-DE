@@ -33,4 +33,28 @@ Description: Longhorn 4051-inspired desktop environment - data files
  LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051.
  .
  This package contains the architecture-independent data files: the
- application menu entry and the Wayland and X11 session entries.
+ application menu entry.
+
+Package: lh4051-de-session
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         x-window-manager,
+         ${misc:Depends}
+Description: Longhorn 4051-inspired desktop environment - X11 session
+ LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051.
+ .
+ This package adds the "LH4051-DE" X11 session entry to the login manager.
+ The session runs the shell on top of the default window manager.
+
+Package: lh4051-de-session-wayland
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         labwc,
+         ${misc:Depends}
+Description: Longhorn 4051-inspired desktop environment - Wayland session
+ LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051.
+ .
+ This package adds the "LH4051-DE (Wayland)" session entry to the login
+ manager. The session runs the shell on top of the labwc compositor.

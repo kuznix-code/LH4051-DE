@@ -2,14 +2,15 @@
 # Builds distribution packages (from source) inside a distribution container. Used by CI
 # (.github/workflows/packages.yml). Run from the repository root.
 #
-#   FORMAT=deb|rpm|arch   package format (the container must be Debian, Fedora or Arch based)
+#   FORMAT=deb|rpm|arch|apk  package format (the container must be Debian, Fedora, Arch or Alpine (musl) based)
 #   PKG_VERSION=...       project version (scripts/pkg-version.sh), e.g. 0.2.0.dev.20261101.a31e706 or 0.1.1
-#   BUILD_DATA=1|0        keep the architecture-independent lh4051-de-data package (1) or only the
-#                         architecture-specific lh4051-de package (0). CI sets 1 on x86_64 only.
+#   BUILD_DATA=1|0        keep the architecture-independent packages (lh4051-de-data, lh4051-de-session,
+#                         lh4051-de-session-wayland) (1) or only the architecture-specific lh4051-de
+#                         package (0). CI sets 1 on x86_64 only.
 #
-# Output: dist/*.deb, dist/*.rpm or dist/*.pkg.tar.zst
+# Output: dist/*.deb, dist/*.rpm, dist/*.pkg.tar.zst or dist/*.apk
 set -eu
-: "${FORMAT:?FORMAT must be deb, rpm or arch}"
+: "${FORMAT:?FORMAT must be deb, rpm, arch or apk}"
 : "${PKG_VERSION:?PKG_VERSION is required}"
 BUILD_DATA="${BUILD_DATA:-1}"
 
@@ -21,9 +22,20 @@ rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
 # Per-format version spellings of the same upstream version.
 #   deb/rpm: pre-releases use "~" so they sort before the final release (0.2.0~dev... < 0.2.0)
 #   arch:    no "~" or "-" allowed in pkgver
+#   apk:     digits and dots plus an optional suffix (_beta1, _rc1, _git<date>);
+#            0.2.0.dev.20261101.a31e706 -> 0.2.0_git20261101, 0.1.1 -> 0.1.1
 VER_TILDE="$(printf '%s' "$PKG_VERSION" | sed -E 's/-/~/; s/\.(dev|alpha|beta|rc)/~\1/')"
 VER_ARCH="$(printf '%s' "$PKG_VERSION" | tr '~-' '__')"
-echo "package version: $PKG_VERSION  (deb/rpm: $VER_TILDE, arch: $VER_ARCH)   machine: $(uname -m)"
+VER_APK="$(printf '%s' "$PKG_VERSION" | sed -E 's/-(alpha|beta|rc)\.?([0-9]+)$/_\1\2/')"
+case "$VER_APK" in
+    *_alpha[0-9]*|*_beta[0-9]*|*_rc[0-9]*) ;;   # already a valid apk pre-release suffix
+    *)
+        apk_base="$(printf '%s' "$VER_APK" | sed -nE 's/^([0-9]+(\.[0-9]+){0,2}).*/\1/p')"
+        apk_day="$(printf '%s' "$VER_APK" | sed -nE 's/.*\.([0-9]{8})(\..*)?$/\1/p')"
+        if [ "$VER_APK" != "$apk_base" ] && [ -n "$apk_day" ]; then VER_APK="${apk_base}_git${apk_day}"; else VER_APK="$apk_base"; fi
+        ;;
+esac
+echo "package version: $PKG_VERSION  (deb/rpm: $VER_TILDE, arch: $VER_ARCH, apk: $VER_APK)   machine: $(uname -m)"
 
 # Copy of the working tree without VCS data and previous build output.
 copy_tree() {
@@ -96,6 +108,30 @@ arch)
     ls -l "$bdir/out"
     for f in "$bdir"/out/*.pkg.tar.zst; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%-any.pkg.tar.zst}" != "$f" ]; then continue; fi
+        cp "$f" "$OUT"/
+    done
+    ;;
+apk)
+    apk add --no-cache alpine-sdk tar pkgconf gtk4.0-dev glib-dev
+    extra=""
+    if apk add --no-cache gtk4-layer-shell-dev; then extra="gtk4-layer-shell-dev"; else echo "gtk4-layer-shell not available; building composite-only"; fi
+
+    bdir="$WORK/apk"
+    mkdir -p "$bdir"
+    copy_tree "$WORK/lh4051-de-$VER_APK"
+    tar -C "$WORK" -czf "$bdir/lh4051-de-$VER_APK.tar.gz" "lh4051-de-$VER_APK"
+    sed -e "s|@PKGVER@|$VER_APK|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@MAKEDEPENDS_EXTRA@|$extra|g" \
+        packaging/alpine/APKBUILD.in > "$bdir/APKBUILD"
+
+    # abuild signs packages; a throwaway key is enough for CI artifacts. Building as root needs -F.
+    abuild-keygen -a -i -n
+    (cd "$bdir" && abuild -F checksum && REPODEST="$bdir/repo" abuild -F -r)
+    find "$bdir/repo" -name '*.apk' -exec ls -l {} +
+    for f in $(find "$bdir/repo" -name '*.apk'); do
+        case "$(basename "$f")" in
+            lh4051-de-data-*|lh4051-de-session-*) [ "$BUILD_DATA" = 1 ] || continue ;;
+            *-doc-*|*-dbg-*|*-dev-*) continue ;;
+        esac
         cp "$f" "$OUT"/
     done
     ;;

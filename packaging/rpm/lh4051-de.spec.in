@@ -34,8 +34,28 @@ Summary:        Longhorn 4051-inspired desktop environment - data files
 BuildArch:      noarch
 
 %description -n lh4051-de-data
-Architecture-independent data files for LH4051-DE: the application menu entry
-and the Wayland and X11 session entries.
+Architecture-independent data files for LH4051-DE: the application menu entry.
+
+%package -n lh4051-de-session
+Summary:        Longhorn 4051-inspired desktop environment - X11 session
+BuildArch:      noarch
+Requires:       lh4051-de = %{version}-%{release}
+# Default window manager for the X11 session (the session script tries openbox first).
+Requires:       openbox
+
+%description -n lh4051-de-session
+Adds the "LH4051-DE" X11 session entry to the login manager. The session runs
+the shell on top of the default window manager.
+
+%package -n lh4051-de-session-wayland
+Summary:        Longhorn 4051-inspired desktop environment - Wayland session
+BuildArch:      noarch
+Requires:       lh4051-de = %{version}-%{release}
+Requires:       labwc
+
+%description -n lh4051-de-session-wayland
+Adds the "LH4051-DE (Wayland)" session entry to the login manager. The session
+runs the shell on top of the labwc compositor.
 
 %prep
 %autosetup -n %{name}-%{version}
@@ -62,8 +82,14 @@ and the Wayland and X11 session entries.
 %files -n lh4051-de-data
 %license LICENSE
 %{_datadir}/applications/lh4051-de.desktop
-%{_datadir}/wayland-sessions/lh4051-de.desktop
+
+%files -n lh4051-de-session
+%license LICENSE
 %{_datadir}/xsessions/lh4051-de.desktop
+
+%files -n lh4051-de-session-wayland
+%license LICENSE
+%{_datadir}/wayland-sessions/lh4051-de.desktop
 
 %changelog
 * @DATE@ kuznix-code <noreply@github.com> - @VERSION@-1

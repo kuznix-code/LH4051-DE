@@ -172,4 +172,8 @@ On Windows the shell covers the screen. Press **Alt+F4** on the shell, or use *S
 `make install` installs `lh4051-de-session` and Wayland/X11 session entries. The Wayland session starts
 `labwc` (or `sway`) with the shell as its autostart; set `LH4051_COMPOSITOR` to use another layer-shell compositor.
 
+The login manager shows two entries: **LH4051-DE** (X11) and **LH4051-DE (Wayland)**. Distribution packages ship them
+separately: `lh4051-de-session` (X11, requires the default window manager) and `lh4051-de-session-wayland`
+(Wayland, requires `labwc`). Packages are built for Debian (`.deb`), Fedora (`.rpm`), Arch Linux and Alpine Linux (musl, `.apk`).
+
 The project does not bundle Microsoft artwork; the wallpaper is an included image and can be replaced in Settings.

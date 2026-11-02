@@ -1,11 +1,14 @@
 name: packages
 
 # Distribution packages built from source: .deb (Debian), .rpm (Fedora), .pkg.tar.zst (Arch Linux),
-# for x86_64 and arm64, on the `main` and `stable` branches.
+# .apk (Alpine Linux, musl), for x86_64 and arm64, on the `main` and `stable` branches.
 #
 #   lh4051-de        the shell, session wrapper and updater script (one per architecture)
-#   lh4051-de-data   architecture-independent data files (desktop and session entries);
-#                    built once, by the x86_64 job, and shared by both architectures
+#   lh4051-de-data   architecture-independent data files (application menu entry)
+#   lh4051-de-session           X11 session entry (requires the default window manager)
+#   lh4051-de-session-wayland   Wayland session entry (requires labwc)
+#                    the three architecture-independent packages are built once, by the x86_64 job,
+#                    and shared by both architectures
 #
 # The universal installers and tarballs are built by build.yml; this workflow only adds native packages.
 
@@ -42,6 +45,9 @@ jobs:
           #     filesystem is imported below (the runner is arm64, so nothing is emulated).
           - { format: arch, arch: x86_64, runner: ubuntu-latest,     image: "archlinux:base-devel",  data: "1", glob: "dist/*.pkg.tar.zst" }
           - { format: arch, arch: arm64,  runner: ubuntu-24.04-arm,  image: "alarm-local:latest",    data: "0", glob: "dist/*.pkg.tar.zst", rootfs: "ArchLinuxARM-aarch64-latest.tar.gz" }
+          # --- Alpine Linux (musl) packages, built with abuild in Alpine edge
+          - { format: apk,  arch: x86_64, runner: ubuntu-latest,     image: "alpine:edge",           data: "1", glob: "dist/*.apk" }
+          - { format: apk,  arch: arm64,  runner: ubuntu-24.04-arm,  image: "alpine:edge",           data: "0", glob: "dist/*.apk" }
     steps:
       - uses: actions/checkout@v4
       - name: Artifact version
