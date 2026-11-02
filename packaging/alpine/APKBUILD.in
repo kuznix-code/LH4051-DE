@@ -1,0 +1,51 @@
+# LH4051-DE Alpine Linux (musl) split package, built from the checked-out source by CI
+# (scripts/ci-package-build.sh). Placeholders: @PKGVER@ (apk-safe version), @PKG_VERSION@ (version stamp),
+# @MAKEDEPENDS_EXTRA@ (gtk4-layer-shell-dev when the repository has it).
+# Maintainer: kuznix-code <noreply@github.com>
+pkgname=lh4051-de
+pkgver=@PKGVER@
+pkgrel=0
+pkgdesc="Longhorn 4051-inspired desktop environment"
+url="https://github.com/kuznix-code/LH4051-DE"
+arch="all"
+license="GPL-3.0-or-later"
+depends="lh4051-de-data=$pkgver-r$pkgrel"
+makedepends="build-base pkgconf gtk4.0-dev glib-dev @MAKEDEPENDS_EXTRA@"
+subpackages="
+	$pkgname-data:_data:noarch
+	$pkgname-session:_session:noarch
+	$pkgname-session-wayland:_session_wayland:noarch
+	"
+source="$pkgname-$pkgver.tar.gz"
+options="!check"
+
+build() {
+	make PREFIX=/usr PKG_VERSION='@PKG_VERSION@' CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" all sessions
+}
+
+check() {
+	./build/linux-gcc/lh4051-de --version
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr PKG_VERSION='@PKG_VERSION@' CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" install
+}
+
+_data() {
+	pkgdesc="$pkgdesc - data files"
+	depends=""
+	amove usr/share/applications
+}
+
+_session() {
+	pkgdesc="$pkgdesc - X11 session"
+	# Default window manager for the X11 session (the session script tries openbox first).
+	depends="$pkgname=$pkgver-r$pkgrel openbox"
+	amove usr/share/xsessions
+}
+
+_session_wayland() {
+	pkgdesc="$pkgdesc - Wayland session"
+	depends="$pkgname=$pkgver-r$pkgrel labwc"
+	amove usr/share/wayland-sessions
+}
