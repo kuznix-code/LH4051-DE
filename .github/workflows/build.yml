@@ -396,6 +396,12 @@ jobs:
     if: always() && github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
     needs: [linux, linux-x64-variants, linux-containers, macos, freebsd, windows-mingw]
     runs-on: ubuntu-latest
+    # Pushes to one branch can overlap (a build takes ~15 minutes). Two ci-release jobs deleting and recreating the same
+    # "ci-<branch>" release at once make "gh release create" fail with "release with the same tag name already exists".
+    # Queue them instead; never cancel one midway, because that could leave the release deleted but not recreated.
+    concurrency:
+      group: ci-release-${{ github.ref_name }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -417,10 +423,21 @@ jobs:
           cp artifacts/*Installer* out/ 2>/dev/null || true
           ls out | grep -q . || { echo "::warning::no installers were built; not publishing $tag"; exit 0; }
           printf 'version=%s\nsha=%s\nbranch=%s\n' "$version" "$GITHUB_SHA" "$BRANCH" > out/ci-build.txt
-          gh release delete "$tag" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
-            --title "CI build of $BRANCH ($version)" \
-            --notes "Rolling build of the $BRANCH branch at ${GITHUB_SHA::7}. Not a release; use LH4051-DE Updater (dev modes)."
+          # Delete and recreate the rolling release. Deleting an absent release is fine; any other error stays visible.
+          # Retry, because the release and tag can take a moment to disappear after the delete.
+          published=
+          for attempt in 1 2 3 4 5; do
+            gh release delete "$tag" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || echo "::notice::delete of $tag skipped or failed (attempt $attempt)"
+            if gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+              --title "CI build of $BRANCH ($version)" \
+              --notes "Rolling build of the $BRANCH branch at ${GITHUB_SHA::7}. Not a release; use LH4051-DE Updater (dev modes)."; then
+              published=1
+              break
+            fi
+            echo "::warning::publishing $tag failed (attempt $attempt of 5); retrying"
+            sleep $((attempt * 5))
+          done
+          [ -n "$published" ] || { echo "::error::could not publish $tag"; exit 1; }
 
   # -------------------------------------------------------------- Release
   release:
