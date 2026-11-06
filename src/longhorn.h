@@ -58,6 +58,7 @@ typedef enum {
     LH_PREF_WATERMARK,
     LH_PREF_SIDEBAR,
     LH_PREF_CLOCK_24H,
+    LH_PREF_UPDATER_TESTING,
     LH_PREF_COUNT
 } LHPref;
 typedef void (*LHPrefsFunc)(gpointer user_data);
@@ -83,5 +84,22 @@ void lh4051_explorer_open(GtkApplication *app, const char *path);
 void lh4051_explorer_open_search(GtkApplication *app, const char *path, const char *query);
 void lh4051_settings_open(GtkApplication *app);
 void lh4051_appstore_open(GtkApplication *app);
+
+/* appstore.c: run a command in a log window (used by the updater too); argv is NULL-terminated, free-func g_free */
+void lh4051_run_logged(GtkApplication *app, const char *title, const char *detail, GPtrArray *argv);
+
+/* updater.c: the GUI updater is off by default on systems that have a package manager */
+typedef enum {
+    LH_UPDATER_DISABLED,  /* a package manager updates LH4051-DE (or LH4051_UPDATER=off) */
+    LH_UPDATER_DEFAULT,   /* Windows, macOS, or an OS without a package manager (Linux From Scratch, ...) */
+    LH_UPDATER_TESTING    /* switched on explicitly for testing */
+} LHUpdaterPolicy;
+LHUpdaterPolicy lh4051_updater_policy(char **note); /* note: one sentence for the user; free with g_free */
+const char *lh4051_updater_mode(void);              /* stable, lts, beta or dev (from updater.conf) */
+void lh4051_updater_set_mode(const char *id);
+guint lh4051_updater_mode_count(void);
+void lh4051_updater_mode_info(guint i, const char **id, const char **label);
+/* Builds the command for "check" or "install"; NULL with *problem set when it cannot run. Free with g_ptr_array_unref. */
+GPtrArray *lh4051_updater_argv(gboolean install, char **problem);
 
 #endif

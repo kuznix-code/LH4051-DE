@@ -66,6 +66,13 @@ updater builds that branch from source; on Windows set `GH_TOKEN`. Releases (`st
 * **Windows**: `lh4051-de-updater.cmd -Mode beta` (`-Check`, `-Yes`, `-Force`) runs the `.exe` installer.
 * **macOS**: runs the `.pkg` installer (`LH4051-DE.app/Contents/Resources/lh4051-de-updater`).
 * **Linux, FreeBSD**: `lh4051-de-updater [--mode beta] [--check] [--yes] [--force] [--prefix DIR]` runs the `.run` installer.
+
+**GUI updater (Settings → Updates).** The same updater is built into LH4051-DE Settings: pick an update channel, *Check for updates*,
+*Install update*. It is **off by default wherever a package manager exists** (apt, dnf, pacman, zypper, apk, xbps, emerge, pkg, ...),
+for the window and for the `lh4051-de-updater` command alike: update LH4051-DE with the package manager there. It is **on by default**
+on Windows, on macOS and on systems without a package manager, such as Linux From Scratch. To use it anyway, for testing, turn on
+*Enable the updater for testing* in Settings, or use `--testing`, `LH4051_UPDATER=1` or `enabled=yes` in `updater.conf`.
+`LH4051_UPDATER=0` switches it off everywhere.
 * **Any other OS or architecture** (or `--source`): downloads the source and compiles it. This needs GTK 4.10+
   development files, a C compiler, GNU Make (`gmake` on BSD) and pkg-config.
 

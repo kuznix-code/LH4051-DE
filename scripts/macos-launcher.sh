@@ -6,5 +6,6 @@ for p in /opt/homebrew /usr/local /opt/local; do
     [ -d "$p/share" ] && XDG_DATA_DIRS="${XDG_DATA_DIRS:+$XDG_DATA_DIRS:}$p/share"
     [ -d "$p/bin" ] && PATH="$PATH:$p/bin"
 done
-export XDG_DATA_DIRS PATH
+LH4051_RESOURCES="$(cd "$here/../Resources" 2>/dev/null && pwd)"
+export XDG_DATA_DIRS PATH LH4051_RESOURCES
 exec "$here/lh4051-de-bin" --windowed "$@"
