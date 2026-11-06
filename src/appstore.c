@@ -392,7 +392,7 @@ static void op_destroyed(GtkWidget *w, gpointer data)
 
 static void op_close_clicked(GtkButton *b, gpointer data) { (void)b; gtk_window_close(GTK_WINDOW(data)); }
 
-static void run_logged(GtkApplication *app, const char *title, const char *detail, GPtrArray *argv)
+static void run_logged_titled(GtkApplication *app, const char *window_title, const char *title, const char *detail, GPtrArray *argv)
 {
     GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     GtkWidget *heading = gtk_label_new(title);
@@ -430,7 +430,7 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     gtk_widget_set_margin_start(root, 14);
     gtk_widget_set_margin_end(root, 14);
 
-    op->window = lh4051_wm_create_window(app, "LH4051 App Store — Operation", 720, 480, root);
+    op->window = lh4051_wm_create_window(app, window_title, 720, 480, root);
     g_signal_connect(op->close, "clicked", G_CALLBACK(op_close_clicked), op->window);
     g_signal_connect(op->window, "close-request", G_CALLBACK(op_close_request), op);
     g_signal_connect(op->window, "destroy", G_CALLBACK(op_destroyed), op);
@@ -443,7 +443,7 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
         if (prepared) g_ptr_array_unref(prepared);
         if (!in) {
             op_append(op, error ? error->message : "Could not start the command.");
-            gtk_label_set_text(GTK_LABEL(op->status), "Could not start the package manager");
+            gtk_label_set_text(GTK_LABEL(op->status), "Could not start the command");
             gtk_widget_add_css_class(op->status, "lh-operation-failed");
             g_clear_error(&error);
             return; /* window owns op; released in op_destroyed */
@@ -461,7 +461,7 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     op->process = spawn_pm(argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE, &error);
     if (!op->process) {
         op_append(op, error ? error->message : "Could not start the command.");
-        gtk_label_set_text(GTK_LABEL(op->status), "Could not start the package manager");
+        gtk_label_set_text(GTK_LABEL(op->status), "Could not start the command");
         gtk_widget_add_css_class(op->status, "lh-operation-failed");
         g_clear_error(&error);
         return; /* window owns op; released in op_destroyed */
@@ -474,6 +474,16 @@ static void run_logged(GtkApplication *app, const char *title, const char *detai
     op_read_next(op);
     g_subprocess_wait_async(op->process, NULL, op_finished, op);
 #endif
+}
+
+static void run_logged(GtkApplication *app, const char *title, const char *detail, GPtrArray *argv)
+{
+    run_logged_titled(app, "LH4051 App Store — Operation", title, detail, argv);
+}
+
+void lh4051_run_logged(GtkApplication *app, const char *title, const char *detail, GPtrArray *argv)
+{
+    run_logged_titled(app, "LH4051 Updater", title, detail, argv);
 }
 
 /* ======================================================================

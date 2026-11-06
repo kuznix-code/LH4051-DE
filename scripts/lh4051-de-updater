@@ -1,7 +1,13 @@
 #!/bin/sh
 # LH4051-DE Updater (Linux, macOS, FreeBSD and other unix-like systems)
 #
-#   lh4051-de-updater [--mode MODE] [--check] [--yes] [--force] [--source] [--bootstrap] [--prefix DIR]
+#   lh4051-de-updater [--mode MODE] [--check] [--yes] [--force] [--source] [--bootstrap] [--prefix DIR] [--testing]
+#
+# The updater is OFF by default where the system has a package manager (apt, dnf, pacman, zypper, apk, pkg, ...):
+# update LH4051-DE with that package manager instead. It is ON by default on macOS (and Windows) and on systems without
+# a package manager, such as Linux From Scratch. To use it anyway, for testing: --testing, LH4051_UPDATER=1,
+# "enabled=yes" in ~/.config/lh4051-de/updater.conf, or the "Enable the updater for testing" switch in LH4051-DE
+# Settings. LH4051_UPDATER=0 switches it off everywhere. (The same rules are in src/updater.c; keep them in sync.)
 #
 # Modes (default: stable; also LH4051_UPDATE_MODE or "mode=..." in ~/.config/lh4051-de/updater.conf)
 #   stable         newest stable release
@@ -53,6 +59,7 @@ CHECK=0
 YES=0
 FORCE=0
 FORCE_SOURCE=0
+TESTING=0
 BOOTSTRAP=auto   # auto | 1 (--bootstrap) | 0 (--no-bootstrap)
 PREFIX=""
 VARIANT=""
@@ -73,6 +80,7 @@ while [ $# -gt 0 ]; do
         -y|--yes)   YES=1 ;;
         -f|--force) FORCE=1 ;;
         --source)   FORCE_SOURCE=1 ;;
+        --testing)  TESTING=1 ;;
         --bootstrap) BOOTSTRAP=1; FORCE_SOURCE=1 ;;
         --no-bootstrap) BOOTSTRAP=0 ;;
         --variant)  [ $# -ge 2 ] || die "--variant needs a value"; VARIANT="$2"; shift ;;
@@ -134,6 +142,43 @@ if [ "$OS_RAW" = Linux ]; then
     elif ls /lib/ld-musl-*.so.1 /usr/lib/ld-musl-*.so.1 >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; then LIBC=musl; fi
 fi
 case "$LIBC" in glibc|musl) ;; *) die "LH4051_LIBC must be glibc or musl" ;; esac
+
+# ---------------------------------------------------------------- policy
+# Off by default where a package manager should update LH4051-DE; on for macOS, Linux From Scratch and other systems
+# without one. Switched on for testing with --testing, LH4051_UPDATER=1, "enabled=yes" in updater.conf or the
+# "updater-testing" switch of LH4051-DE Settings. Keep in sync with src/updater.c.
+is_lfs() {
+    [ -n "${LH4051_LFS:-}" ] && return 0
+    [ -f /etc/lfs-release ] || [ -f /etc/lfs-version ] && return 0
+    [ -r /etc/os-release ] && grep -Eqi '^(ID|NAME)=.?(lfs|linux from scratch)' /etc/os-release && return 0
+    return 1
+}
+
+find_package_manager() {
+    for _pm in apt-get apt dpkg dnf yum rpm zypper pacman apk xbps-install emerge eopkg slackpkg installpkg swupd nix-env guix pkg pkgin pkg_add opkg; do
+        have "$_pm" && { printf '%s\n' "$_pm"; return 0; }
+    done
+    return 1
+}
+
+check_policy() {
+    case "$(printf '%s' "${LH4051_UPDATER:-}" | tr 'A-Z' 'a-z')" in
+        0|off|no|false|disabled) die "the updater is switched off by LH4051_UPDATER" ;;
+    esac
+    [ "$OS" = macos ] && return 0
+    is_lfs && return 0
+    _pm="$(find_package_manager)" || return 0
+    [ "$TESTING" = 1 ] && return 0
+    case "$(printf '%s' "${LH4051_UPDATER:-}" | tr 'A-Z' 'a-z')" in 1|on|yes|true|testing|enabled) return 0 ;; esac
+    [ -f "$CONF" ] && grep -Eqi '^[[:space:]]*enabled[[:space:]]*=[[:space:]]*(1|on|yes|true|testing)' "$CONF" && return 0
+    _ini="${XDG_CONFIG_HOME:-$HOME/.config}/lh4051-de/settings.ini"
+    [ -f "$_ini" ] && grep -Eq '^[[:space:]]*updater-testing[[:space:]]*=[[:space:]]*true' "$_ini" && return 0
+    printf 'The LH4051-DE updater is off on this system because it has a package manager (%s).\n' "$_pm" >&2
+    printf 'Update LH4051-DE with it. To use this updater anyway (for testing), rerun with --testing,\n' >&2
+    printf 'set LH4051_UPDATER=1, or put "enabled=yes" in %s.\n' "$CONF" >&2
+    exit 2
+}
+check_policy
 
 # CI publishes installers for Linux, macOS and FreeBSD; musl only for x86_64, i686 and arm64.
 # Every other OS, libc or CPU architecture compiles from source (a missing installer also falls back to source).
@@ -518,13 +563,6 @@ install_binary() {
 }
 
 # ---------------------------------------------------------------- source build
-is_lfs() {
-    [ -n "${LH4051_LFS:-}" ] && return 0
-    [ -f /etc/lfs-release ] || [ -f /etc/lfs-version ] && return 0
-    [ -r /etc/os-release ] && grep -Eqi '^(ID|NAME)=.?(lfs|linux from scratch)' /etc/os-release && return 0
-    return 1
-}
-
 find_tool() { # find_tool NAME CANDIDATE...  -> sets the variable NAME to the first candidate that exists
     _var="$1"; shift
     for _c in "$@"; do [ -n "$_c" ] && have "$_c" && { eval "$_var=\$_c"; return 0; }; done

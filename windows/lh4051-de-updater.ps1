@@ -31,6 +31,7 @@ param(
     [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
+if ($env:LH4051_UPDATER -match '^(0|off|no|false|disabled)$') { Write-Host 'The updater is switched off by LH4051_UPDATER.'; exit 2 }
 $Repo = 'kuznix-code/LH4051-DE'
 $Api = if ($env:LH4051_API) { $env:LH4051_API } else { "https://api.github.com/repos/$Repo" }
 $Raw = if ($env:LH4051_RAW) { $env:LH4051_RAW } else { "https://raw.githubusercontent.com/$Repo" }

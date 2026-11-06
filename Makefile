@@ -207,7 +207,7 @@ endif
 # Sources
 # ---------------------------------------------------------------------------
 SRC := src/main.c src/platform.c src/prefs.c src/theme.c src/desktop.c src/panel.c src/sidebar.c \
-       src/start_menu.c src/settings.c src/explorer.c src/appstore.c src/winproc.c \
+       src/start_menu.c src/settings.c src/explorer.c src/appstore.c src/updater.c src/winproc.c \
        src/LH4051-WM/wm.c src/LH4051-FM/fm.c src/LH4051-SESSION/session.c
 OBJS    := $(patsubst %.c,$(BUILD)/%$(OBJEXT),$(SRC))
 RES_C   := $(BUILD)/resources.c

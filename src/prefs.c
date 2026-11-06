@@ -1,7 +1,7 @@
 #include "longhorn.h"
 
-static const char *keys[LH_PREF_COUNT] = {"desktop-icons", "watermark", "sidebar", "clock-24h", "clock-seconds"};
-static gboolean values[LH_PREF_COUNT] = {TRUE, TRUE, TRUE, FALSE, FALSE};
+static const char *keys[LH_PREF_COUNT] = {"desktop-icons", "watermark", "sidebar", "clock-24h", "clock-seconds", "updater-testing"};
+static gboolean values[LH_PREF_COUNT] = {TRUE, TRUE, TRUE, FALSE, FALSE, FALSE};
 static char *wallpaper;
 
 typedef struct { LHPrefsFunc func; gpointer data; } Watcher;

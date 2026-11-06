@@ -2,7 +2,11 @@
 #include "LH4051-WM/wm.h"
 #include "LH4051-SESSION/session.h"
 
-typedef struct { GtkWidget *wallpaper_label; } SettingsState;
+typedef struct {
+    GtkWidget *wallpaper_label;
+    GtkApplication *app;
+    GtkWidget *upd_note, *upd_testing, *upd_controls, *upd_status;
+} SettingsState;
 
 static GtkWindow *existing; /* single instance */
 
@@ -88,6 +92,108 @@ static void reset_wallpaper(GtkButton *b, gpointer data)
     set_wallpaper_text(data);
 }
 
+/* ---- Updates card ---------------------------------------------------------------------------------- */
+
+static void updater_refresh(SettingsState *s)
+{
+    char *note = NULL;
+    LHUpdaterPolicy policy = lh4051_updater_policy(&note);
+    gtk_label_set_text(GTK_LABEL(s->upd_note), note);
+    g_free(note);
+    gtk_widget_set_visible(s->upd_controls, policy != LH_UPDATER_DISABLED);
+    /* The testing switch only matters where the updater is off by default. */
+    gtk_widget_set_visible(s->upd_testing, policy != LH_UPDATER_DEFAULT);
+}
+
+static void updater_testing_toggled(GtkCheckButton *b, gpointer data)
+{
+    lh4051_prefs_set(LH_PREF_UPDATER_TESTING, gtk_check_button_get_active(b));
+    updater_refresh(data);
+}
+
+static void updater_mode_changed(GtkDropDown *d, GParamSpec *pspec, gpointer data)
+{
+    const char *id = NULL;
+    (void)pspec; (void)data;
+    lh4051_updater_mode_info(gtk_drop_down_get_selected(d), &id, NULL);
+    lh4051_updater_set_mode(id);
+}
+
+static void updater_run(SettingsState *s, gboolean install)
+{
+    char *problem = NULL, *detail;
+    GPtrArray *argv;
+
+    if (lh4051_updater_policy(NULL) == LH_UPDATER_DISABLED) { updater_refresh(s); return; }
+    argv = lh4051_updater_argv(install, &problem);
+    if (!argv) {
+        gtk_label_set_text(GTK_LABEL(s->upd_status), problem ? problem : "The updater could not be started.");
+        g_free(problem);
+        return;
+    }
+    gtk_label_set_text(GTK_LABEL(s->upd_status), "");
+    detail = g_strdup_printf("Update channel: %s", lh4051_updater_mode());
+    lh4051_run_logged(s->app, install ? "Installing the update" : "Checking for updates", detail, argv);
+    g_free(detail);
+    g_ptr_array_unref(argv);
+}
+
+static void updater_check_clicked(GtkButton *b, gpointer data) { (void)b; updater_run(data, FALSE); }
+static void updater_install_clicked(GtkButton *b, gpointer data) { (void)b; updater_run(data, TRUE); }
+
+static GtkWidget *updater_card(SettingsState *s)
+{
+    GtkWidget *c = card("Updates", "Check for and install new versions of LH4051-DE.");
+    GtkWidget *row, *label, *btn, *dropdown;
+    GtkStringList *labels = gtk_string_list_new(NULL);
+    const char *current = lh4051_updater_mode();
+    guint selected = 0;
+
+    s->upd_note = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(s->upd_note), 0);
+    gtk_label_set_wrap(GTK_LABEL(s->upd_note), TRUE);
+    gtk_box_append(GTK_BOX(c), s->upd_note);
+
+    s->upd_testing = gtk_check_button_new_with_label("Enable the updater for testing");
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(s->upd_testing), lh4051_prefs_get(LH_PREF_UPDATER_TESTING));
+    g_signal_connect(s->upd_testing, "toggled", G_CALLBACK(updater_testing_toggled), s);
+    gtk_box_append(GTK_BOX(c), s->upd_testing);
+
+    s->upd_controls = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    label = gtk_label_new("Update channel:");
+    gtk_box_append(GTK_BOX(row), label);
+    for (guint i = 0; i < lh4051_updater_mode_count(); i++) {
+        const char *id, *text;
+        lh4051_updater_mode_info(i, &id, &text);
+        gtk_string_list_append(labels, text);
+        if (!g_strcmp0(id, current)) selected = i;
+    }
+    dropdown = gtk_drop_down_new(G_LIST_MODEL(labels), NULL);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(dropdown), selected);
+    g_signal_connect(dropdown, "notify::selected", G_CALLBACK(updater_mode_changed), NULL);
+    gtk_box_append(GTK_BOX(row), dropdown);
+    gtk_box_append(GTK_BOX(s->upd_controls), row);
+
+    row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    btn = gtk_button_new_with_label("Check for updates");
+    g_signal_connect(btn, "clicked", G_CALLBACK(updater_check_clicked), s);
+    gtk_box_append(GTK_BOX(row), btn);
+    btn = gtk_button_new_with_label("Install update");
+    g_signal_connect(btn, "clicked", G_CALLBACK(updater_install_clicked), s);
+    gtk_box_append(GTK_BOX(row), btn);
+    gtk_box_append(GTK_BOX(s->upd_controls), row);
+
+    s->upd_status = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(s->upd_status), 0);
+    gtk_label_set_wrap(GTK_LABEL(s->upd_status), TRUE);
+    gtk_box_append(GTK_BOX(s->upd_controls), s->upd_status);
+    gtk_box_append(GTK_BOX(c), s->upd_controls);
+
+    updater_refresh(s);
+    return c;
+}
+
 void lh4051_settings_open(GtkApplication *app)
 {
     if (existing) { gtk_window_present(existing); return; }
@@ -99,6 +205,7 @@ void lh4051_settings_open(GtkApplication *app)
     char *text;
 
     state = g_new0(SettingsState, 1);
+    state->app = app;
     gtk_widget_add_css_class(box, "lh-settings");
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), box);
 
@@ -126,6 +233,8 @@ void lh4051_settings_open(GtkApplication *app)
     gtk_box_append(GTK_BOX(c), pref_check("Show seconds in the clock", LH_PREF_CLOCK_SECONDS));
     gtk_box_append(GTK_BOX(c), pref_check("Show sidebar", LH_PREF_SIDEBAR));
     gtk_box_append(GTK_BOX(box), c);
+
+    gtk_box_append(GTK_BOX(box), updater_card(state));
 
     c = card("System", "Current session information.");
     text = g_strdup_printf("LH4051-DE %s", LH4051_VERSION);
