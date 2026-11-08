@@ -18,7 +18,7 @@ srpm:
 	@test -x "$(PROJECT_ROOT)/scripts/pkg-version.sh" || { echo "error: scripts/pkg-version.sh is missing or not executable" >&2; exit 2; }
 	@set -eu; \
 	  outdir="$(abspath $(outdir))"; \
-	  work="$$(mktemp -d "$\{TMPDIR:-/tmp}/lh4051-de-copr.XXXXXX")"; \
+	  work="$$(mktemp -d "/tmp/lh4051-de-copr.XXXXXX")"; \
 	  trap 'rm -rf "$$work"' EXIT HUP INT TERM; \
 	  version="$(RPM_VERSION)"; \
 	  pkg_version="$(PKG_VERSION)"; \
