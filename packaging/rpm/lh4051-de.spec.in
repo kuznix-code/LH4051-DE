@@ -14,7 +14,7 @@ BuildRequires:  pkgconfig
 BuildRequires:  pkgconfig(gtk4) >= 4.10
 BuildRequires:  glib2-devel
 BuildRequires:  gtk4-layer-shell-devel
-Requires:       lh4051-de-data = %{version}-%{release}
+Requires:       LH4051-DE-data = %{version}-%{release}
 Recommends:     labwc
 Suggests:       appstream
 
@@ -30,48 +30,48 @@ compositor and the shell.
 This package contains the desktop shell and its session wrapper. The updater
 and dependency bootstrap tools are available as separate optional packages.
 
-%package -n lh4051-de-data
+%package -n LH4051-DE-data
 Summary:        Longhorn 4051-inspired desktop environment - data files
 BuildArch:      noarch
 
-%description -n lh4051-de-data
+%description -n LH4051-DE-data
 Architecture-independent data files for LH4051-DE: the application menu entry.
 
-%package -n lh4051-de-session
+%package -n LH4051-DE-session
 Summary:        Longhorn 4051-inspired desktop environment - X11 session
 BuildArch:      noarch
 Requires:       LH4051-DE = %{version}-%{release}
 # Default window manager for the X11 session (the session script tries openbox first).
 Requires:       openbox
 
-%description -n lh4051-de-session
+%description -n LH4051-DE-session
 Adds the "LH4051-DE" X11 session entry to the login manager. The session runs
 the shell on top of the default window manager.
 
-%package -n lh4051-de-session-wayland
+%package -n LH4051-DE-session-wayland
 Summary:        Longhorn 4051-inspired desktop environment - Wayland session
 BuildArch:      noarch
-Requires:       lh4051-de = %{version}-%{release}
+Requires:       LH4051-DE = %{version}-%{release}
 Requires:       labwc
 
-%description -n lh4051-de-session-wayland
+%description -n LH4051-DE-session-wayland
 Adds the "LH4051-DE (Wayland)" session entry to the login manager. The session
 runs the shell on top of the labwc compositor.
 
-%package -n lh4051-de-updater
+%package -n LH4051-DE-updater
 Summary:        LH4051-DE updater
 BuildArch:      noarch
 Requires:       LH4051-DE = %{version}-%{release}
 
-%description -n lh4051-de-updater
+%description -n LH4051-DE-updater
 Optional command-line updater for downloading and installing LH4051-DE releases
 or building the project from source where supported.
 
-%package -n lh4051-de-bootstrap
+%package -n LH4051-DE-bootstrap
 Summary:        LH4051-DE dependency bootstrap tool
 BuildArch:      noarch
 
-%description -n lh4051-de-bootstrap
+%description -n LH4051-DE-bootstrap
 Optional helper for building and installing GTK 4 and its dependencies from
 source into a chosen prefix.
 
@@ -97,23 +97,23 @@ install -D -m 0755 scripts/lh4051-de-bootstrap %{buildroot}%{_bindir}/lh4051-de-
 %{_bindir}/lh4051-de-session
 %{_datadir}/lh4051-de/
 
-%files -n lh4051-de-data
+%files -n LH4051-DE-data
 %license LICENSE
 %{_datadir}/applications/lh4051-de.desktop
 
-%files -n lh4051-de-session
+%files -n LH4051-DE-session
 %license LICENSE
 %{_datadir}/xsessions/lh4051-de.desktop
 
-%files -n lh4051-de-session-wayland
+%files -n LH4051-DE-session-wayland
 %license LICENSE
 %{_datadir}/wayland-sessions/lh4051-de.desktop
 
-%files -n lh4051-de-updater
+%files -n LH4051-DE-updater
 %license LICENSE
 %{_bindir}/lh4051-de-updater
 
-%files -n lh4051-de-bootstrap
+%files -n LH4051-DE-bootstrap
 %license LICENSE
 %{_bindir}/lh4051-de-bootstrap
 
