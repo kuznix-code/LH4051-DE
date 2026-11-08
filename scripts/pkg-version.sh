@@ -9,6 +9,6 @@ if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
     printf '%s\n' "${GITHUB_REF_NAME#v}"
     exit 0
 fi
-sha="$(git rev-parse --short=7 HEAD 2>/dev/null || echo nogit)"
-day="$(git show -s --format=%cd --date=format:%Y%m%d HEAD 2>/dev/null || date -u +%Y%m%d)"
+sha="${LH4051_GIT_COMMIT:-$(git rev-parse --short=7 HEAD 2>/dev/null || echo nogit)}"
+day="${LH4051_GIT_DATE:-$(git show -s --format=%cd --date=format:%Y%m%d HEAD 2>/dev/null || date -u +%Y%m%d)}"
 printf '%s.%s.%s\n' "$base" "$day" "$sha"
