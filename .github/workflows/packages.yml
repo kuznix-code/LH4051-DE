@@ -3,12 +3,16 @@ name: packages
 # Distribution packages built from source: .deb (Debian), .rpm (Fedora), .pkg.tar.zst (Arch Linux),
 # for x86_64 and arm64, on the `main` and `stable` branches.
 #
-#   lh4051-de        the shell, session wrapper and updater script (one per architecture)
-#   lh4051-de-data   architecture-independent data files (application menu entry)
-#   lh4051-de-session           X11 session entry (requires the default window manager)
-#   lh4051-de-session-wayland   Wayland session entry (requires labwc)
-#                    the three architecture-independent packages are built once, by the x86_64 job,
-#                    and shared by both architectures
+# RPM package names:
+#   LH4051-DE                    desktop shell and session wrapper
+#   lh4051-de-data               application menu entry
+#   lh4051-de-session            X11 session entry (requires openbox)
+#   lh4051-de-session-wayland    Wayland session entry (requires labwc)
+#   lh4051-de-updater            optional updater command
+#   lh4051-de-bootstrap          optional GTK/dependency bootstrap command
+#
+# RPMs are built from packaging/rpm/lh4051-de.spec.in. Architecture-independent
+# packages are built once, by the x86_64 job, and shared by both architectures.
 #
 # The universal installers and tarballs are built by build.yml; this workflow only adds native packages.
 
@@ -67,6 +71,6 @@ jobs:
         run: ls -l dist
       - uses: actions/upload-artifact@v4
         with:
-          name: lh4051-de-${{ matrix.format }}-${{ matrix.arch }}
+          name: LH4051-DE-${{ matrix.format }}-${{ matrix.arch }}
           path: ${{ matrix.glob }}
           if-no-files-found: error
