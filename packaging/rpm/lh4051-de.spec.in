@@ -15,6 +15,8 @@ BuildRequires:  pkgconfig(gtk4) >= 4.10
 BuildRequires:  glib2-devel
 BuildRequires:  gtk4-layer-shell-devel
 Requires:       LH4051-DE-data = %{version}-%{release}
+Requires:       LH4051-DE-session = %{version}-%{release}
+Requires:       LH4051-DE-session-wayland = %{version}-%{release}
 Recommends:     labwc
 Suggests:       appstream
 
@@ -51,7 +53,7 @@ the shell on top of the default window manager.
 %package -n LH4051-DE-session-wayland
 Summary:        Longhorn 4051-inspired desktop environment - Wayland session
 BuildArch:      noarch
-Requires:       lh4051-de = %{version}-%{release}
+Requires:       LH4051-DE = %{version}-%{release}
 Requires:       labwc
 
 %description -n LH4051-DE-session-wayland
@@ -97,23 +99,23 @@ install -D -m 0755 scripts/lh4051-de-bootstrap %{buildroot}%{_bindir}/lh4051-de-
 %{_bindir}/lh4051-de-session
 %{_datadir}/lh4051-de/
 
-%files -n lh4051-de-data
+%files -n LH4051-DE-data
 %license LICENSE
 %{_datadir}/applications/lh4051-de.desktop
 
-%files -n lh4051-de-session
+%files -n LH4051-DE-session
 %license LICENSE
 %{_datadir}/xsessions/lh4051-de.desktop
 
-%files -n lh4051-de-session-wayland
+%files -n LH4051-DE-session-wayland
 %license LICENSE
 %{_datadir}/wayland-sessions/lh4051-de.desktop
 
-%files -n lh4051-de-updater
+%files -n LH4051-DE-updater
 %license LICENSE
 %{_bindir}/lh4051-de-updater
 
-%files -n lh4051-de-bootstrap
+%files -n LH4051-DE-bootstrap
 %license LICENSE
 %{_bindir}/lh4051-de-bootstrap
 
