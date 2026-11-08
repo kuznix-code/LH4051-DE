@@ -33,13 +33,13 @@ GIT_COMMIT_FULL := $(shell \
         awk -v ref="$$ref" '$$2 == ref { print $$1; exit }' "$$git_dir/packed-refs"; \
       fi; \
     else \
-      printf '%s\\n' "$$head"; \
+      printf '%s\n' "$$head"; \
     fi; \
   fi)
 
 GIT_COMMIT := $(shell printf '%s' '$(GIT_COMMIT_FULL)' | cut -c1-12)
 PKG_VERSION := $(shell LH4051_GIT_COMMIT='$(GIT_COMMIT_FULL)' "$(VERSION_SCRIPT)" 2>/dev/null)
-RPM_VERSION := $(shell printf '%s' '$(PKG_VERSION)' | sed -E 's/-/~/; s/\\.(dev|alpha|beta|rc)/~\\1/')
+RPM_VERSION := $(shell printf '%s' '$(PKG_VERSION)' | sed -E 's/-/~/; s/\.(dev|alpha|beta|rc)/~\1/')
 RPM_RELEASE := 1.git$(GIT_COMMIT)%{?dist}
 BUILD_DATE := $(shell date -u '+%a %b %d %Y')
 
@@ -50,7 +50,7 @@ check:
 	@test -f "$(SPEC_TEMPLATE)" || { echo "ERROR: RPM spec template not found: $(SPEC_TEMPLATE)" >&2; exit 1; }
 	@test -n "$(PKG_VERSION)" || { echo "ERROR: Could not determine package version." >&2; exit 1; }
 	@test -n "$(RPM_VERSION)" || { echo "ERROR: Could not determine RPM version." >&2; exit 1; }
-	@printf '%s\\n' '$(GIT_COMMIT_FULL)' | grep -Eq '^[0-9a-fA-F]{40}$$' || { echo "ERROR: Could not resolve the checked-out Git commit from .git metadata." >&2; exit 1; }
+	@printf '%s\n' '$(GIT_COMMIT_FULL)' | grep -Eq '^[0-9a-fA-F]{40}$$' || { echo "ERROR: Could not resolve the checked-out Git commit from .git metadata." >&2; exit 1; }
 	@echo "Resolved Git commit: $(GIT_COMMIT_FULL)"
 
 srpm: check
