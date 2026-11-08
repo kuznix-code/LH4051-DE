@@ -1,94 +1,85 @@
-
 # COPR source-RPM builder for LH4051-DE.
 # COPR invokes:
 #   make -f .copr/Makefile srpm outdir=... spec=...
+#
+# COPR's minimal SRPM buildroot does not necessarily contain Git. Resolve
+# HEAD directly from .git metadata so the build does not depend on Git.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := srpm
 
 PROJECT_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
-
 VERSION_SCRIPT := $(PROJECT_ROOT)/scripts/pkg-version.sh
 SPEC_TEMPLATE := $(PROJECT_ROOT)/packaging/rpm/lh4051-de.spec.in
 
-# Read the project version.
-PKG_VERSION := $(shell "$(VERSION_SCRIPT)" 2>/dev/null)
+# Resolve the current commit from .git/HEAD, loose refs, or packed-refs.
+GIT_COMMIT_FULL := $(shell \
+  git_dir="$(PROJECT_ROOT)/.git"; \
+  if [ -f "$$git_dir" ]; then \
+    gitdir_line="$$(sed -n 's/^gitdir: //p' "$$git_dir")"; \
+    case "$$gitdir_line" in \
+      /*) git_dir="$$gitdir_line" ;; \
+      *) git_dir="$(PROJECT_ROOT)/$$gitdir_line" ;; \
+    esac; \
+  fi; \
+  if [ -r "$$git_dir/HEAD" ]; then \
+    head="$$(cat "$$git_dir/HEAD")"; \
+    case "$$head" in \
+      "ref: "*) \
+        ref="$${head#ref: }"; \
+        if [ -r "$$git_dir/$$ref" ]; then \
+          cat "$$git_dir/$$ref"; \
+        elif [ -r "$$git_dir/packed-refs" ]; then \
+          awk -v ref="$$ref" '$$2 == ref { print $$1; exit }' "$$git_dir/packed-refs"; \
+        fi ;; \
+      *) printf '%s\\n' "$$head" ;; \
+    esac; \
+  fi)
 
-# Convert prerelease separators to RPM-compatible versions.
-RPM_VERSION := $(shell printf '%s' '$(PKG_VERSION)' | sed -E 's/-/~/; s/\.(dev|alpha|beta|rc)/~\1/')
-
-# Use the latest commit available in the checked-out source.
-GIT_COMMIT := $(shell git -C "$(PROJECT_ROOT)" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
-GIT_COMMIT_FULL := $(shell git -C "$(PROJECT_ROOT)" rev-parse HEAD 2>/dev/null || echo unknown)
-
-# Include the commit in the RPM release.
+GIT_COMMIT := $(shell printf '%s' '$(GIT_COMMIT_FULL)' | cut -c1-12)
+PKG_VERSION := $(shell LH4051_GIT_COMMIT='$(GIT_COMMIT_FULL)' "$(VERSION_SCRIPT)" 2>/dev/null)
+RPM_VERSION := $(shell printf '%s' '$(PKG_VERSION)' | sed -E 's/-/~/; s/\\.(dev|alpha|beta|rc)/~\\1/')
 RPM_RELEASE := 1%{?dist}.git$(GIT_COMMIT)
-
 BUILD_DATE := $(shell date -u '+%a %b %d %Y')
 
 .PHONY: srpm check
 
 check:
-	@test -n "$(PKG_VERSION)" || { \
-		echo "ERROR: Could not determine package version." >&2; \
-		exit 1; \
-	}
-	@test -n "$(RPM_VERSION)" || { \
-		echo "ERROR: Could not determine RPM version." >&2; \
-		exit 1; \
-	}
-	@test -f "$(SPEC_TEMPLATE)" || { \
-		echo "ERROR: RPM spec template not found: $(SPEC_TEMPLATE)" >&2; \
-		exit 1; \
-	}
-	@test -x "$(VERSION_SCRIPT)" || { \
-		echo "ERROR: Version script missing or not executable: $(VERSION_SCRIPT)" >&2; \
-		exit 1; \
-	}
-	@test "$(GIT_COMMIT)" != "unknown" || { \
-		echo "ERROR: Git commit information is unavailable." >&2; \
-		exit 1; \
-	}
+	@test -x "$(VERSION_SCRIPT)" || { echo "ERROR: Version script missing or not executable: $(VERSION_SCRIPT)" >&2; exit 1; }
+	@test -f "$(SPEC_TEMPLATE)" || { echo "ERROR: RPM spec template not found: $(SPEC_TEMPLATE)" >&2; exit 1; }
+	@test -n "$(PKG_VERSION)" || { echo "ERROR: Could not determine package version." >&2; exit 1; }
+	@test -n "$(RPM_VERSION)" || { echo "ERROR: Could not determine RPM version." >&2; exit 1; }
+	@printf '%s\\n' '$(GIT_COMMIT_FULL)' | grep -Eq '^[0-9a-fA-F]{40}$$' || { echo "ERROR: Could not resolve the checked-out Git commit from .git metadata." >&2; exit 1; }
+	@echo "Resolved Git commit: $(GIT_COMMIT_FULL)"
 
 srpm: check
-	@test -n "$(outdir)" || { \
-		echo "ERROR: COPR did not provide outdir." >&2; \
-		exit 2; \
-	}
-
+	@test -n "$(outdir)" || { echo "ERROR: COPR did not provide outdir." >&2; exit 2; }
 	@set -euo pipefail; \
-	outdir="$(abspath $(outdir))"; \
-	work="$$(mktemp -d /tmp/lh4051-de-copr.XXXXXX)"; \
-	trap 'rm -rf "$$work"' EXIT; \
-	source_dir="LH4051-DE-$(RPM_VERSION)"; \
-	top="$$work/rpmbuild"; \
-	mkdir -p "$$outdir" "$$top/SOURCES" "$$top/SPECS" "$$work/$$source_dir"; \
-	echo "Package version: $(PKG_VERSION)"; \
-	echo "RPM version:     $(RPM_VERSION)"; \
-	echo "Git commit:      $(GIT_COMMIT_FULL)"; \
-	echo "Source directory: $$source_dir"; \
-	echo "Preparing source archive..."; \
-	tar -C "$(PROJECT_ROOT)" \
-		--exclude='./.git' \
-		--exclude='./build' \
-		--exclude='./dist' \
-		--exclude='./out' \
-		-cf - . | tar -C "$$work/$$source_dir" -xf -; \
-	tar -C "$$work" -czf "$$top/SOURCES/LH4051-DE-$(RPM_VERSION).tar.gz" "$$source_dir"; \
-	echo "Generating RPM spec..."; \
-	sed \
-		-e 's|@VERSION@|$(RPM_VERSION)|g' \
-		-e 's|@PKG_VERSION@|$(PKG_VERSION)|g' \
-		-e 's|@DATE@|$(BUILD_DATE)|g' \
-		-e 's|@RELEASE@|$(RPM_RELEASE)|g' \
-		"$(SPEC_TEMPLATE)" > "$$top/SPECS/LH4051-DE.spec"; \
-	echo "Building source RPM..."; \
-	rpmbuild -bs "$$top/SPECS/LH4051-DE.spec" \
-		--define "_topdir $$top" \
-		--define "_srcrpmdir $$outdir"; \
-	set -- "$$outdir"/*.src.rpm; \
-	test -f "$$1" || { \
-		echo "ERROR: rpmbuild did not create an SRPM." >&2; \
-		exit 1; \
-	}; \
-	echo "Created source RPM: $$1"
+	  outdir="$(abspath $(outdir))"; \
+	  work="$$(mktemp -d /tmp/lh4051-de-copr.XXXXXX)"; \
+	  trap 'rm -rf "$$work"' EXIT; \
+	  source_dir="LH4051-DE-$(RPM_VERSION)"; \
+	  top="$$work/rpmbuild"; \
+	  mkdir -p "$$outdir" "$$top/SOURCES" "$$top/SPECS" "$$work/$$source_dir"; \
+	  echo "Package version: $(PKG_VERSION)"; \
+	  echo "RPM version:     $(RPM_VERSION)"; \
+	  echo "RPM release:     $(RPM_RELEASE)"; \
+	  echo "Git commit:      $(GIT_COMMIT_FULL)"; \
+	  echo "Preparing source archive..."; \
+	  tar -C "$(PROJECT_ROOT)" \
+	    --exclude='./.git' --exclude='./build' --exclude='./dist' --exclude='./out' \
+	    -cf - . | tar -C "$$work/$$source_dir" -xf -; \
+	  tar -C "$$work" -czf "$$top/SOURCES/LH4051-DE-$(RPM_VERSION).tar.gz" "$$source_dir"; \
+	  echo "Generating RPM spec..."; \
+	  sed \
+	    -e 's|@VERSION@|$(RPM_VERSION)|g' \
+	    -e 's|@PKG_VERSION@|$(PKG_VERSION)|g' \
+	    -e 's|@DATE@|$(BUILD_DATE)|g' \
+	    -e 's|@RELEASE@|$(RPM_RELEASE)|g' \
+	    "$(SPEC_TEMPLATE)" > "$$top/SPECS/LH4051-DE.spec"; \
+	  echo "Building source RPM..."; \
+	  rpmbuild -bs "$$top/SPECS/LH4051-DE.spec" \
+	    --define "_topdir $$top" --define "_srcrpmdir $$outdir"; \
+	  set -- "$$outdir"/*.src.rpm; \
+	  test -f "$$1" || { echo "ERROR: rpmbuild did not create an SRPM." >&2; exit 1; }; \
+	  echo "Created source RPM: $$1"
