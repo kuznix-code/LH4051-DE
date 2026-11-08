@@ -78,7 +78,7 @@ Optional helper for building and installing GTK 4 and its dependencies from
 source into a chosen prefix.
 
 %prep
-%autosetup -n LH4051-DE-%{version}
+%autosetup -n lh4051-de-%{version}
 
 %build
 %make_build PREFIX=%{_prefix} PKG_VERSION=@PKG_VERSION@ \
