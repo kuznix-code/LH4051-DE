@@ -120,5 +120,5 @@ install -D -m 0755 scripts/lh4051-de-bootstrap %{buildroot}%{_bindir}/lh4051-de-
 %{_bindir}/lh4051-de-bootstrap
 
 %changelog
-* @DATE@ kuznix-code <noreply@github.com> - @VERSION@-1
+* @DATE@ kuznix-code <noreply@github.com> - @VERSION@-@RELEASE@
 - Automated build from the repository
