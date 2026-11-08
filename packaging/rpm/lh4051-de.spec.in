@@ -2,7 +2,7 @@
 # Placeholders: @VERSION@ (RPM-safe version, "~" marks pre-releases), @PKG_VERSION@ (version stamp), @DATE@ (changelog date).
 Name:           LH4051-DE
 Version:        @VERSION@
-Release:        1%{?dist}
+Release:        @RELEASE@
 Summary:        Longhorn 4051-inspired desktop environment
 License:        GPL-3.0-or-later
 URL:            https://github.com/kuznix-code/LH4051-DE
