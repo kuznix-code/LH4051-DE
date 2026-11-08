@@ -17,23 +17,24 @@ GIT_COMMIT_FULL := $(shell \
   git_dir="$(PROJECT_ROOT)/.git"; \
   if [ -f "$$git_dir" ]; then \
     gitdir_line="$$(sed -n 's/^gitdir: //p' "$$git_dir")"; \
-    case "$$gitdir_line" in \
-      /*) git_dir="$$gitdir_line" ;; \
-      *) git_dir="$(PROJECT_ROOT)/$$gitdir_line" ;; \
-    esac; \
+    if [ "$${gitdir_line#/}" != "$$gitdir_line" ]; then \
+      git_dir="$$gitdir_line"; \
+    else \
+      git_dir="$(PROJECT_ROOT)/$$gitdir_line"; \
+    fi; \
   fi; \
   if [ -r "$$git_dir/HEAD" ]; then \
     head="$$(cat "$$git_dir/HEAD")"; \
-    case "$$head" in \
-      "ref: "*) \
-        ref="$${head#ref: }"; \
-        if [ -r "$$git_dir/$$ref" ]; then \
-          cat "$$git_dir/$$ref"; \
-        elif [ -r "$$git_dir/packed-refs" ]; then \
-          awk -v ref="$$ref" '$$2 == ref { print $$1; exit }' "$$git_dir/packed-refs"; \
-        fi ;; \
-      *) printf '%s\n' "$$head" ;; \
-    esac; \
+    if [ "$${head#ref: }" != "$$head" ]; then \
+      ref="$${head#ref: }"; \
+      if [ -r "$$git_dir/$$ref" ]; then \
+        cat "$$git_dir/$$ref"; \
+      elif [ -r "$$git_dir/packed-refs" ]; then \
+        awk -v ref="$$ref" '$$2 == ref { print $$1; exit }' "$$git_dir/packed-refs"; \
+      fi; \
+    else \
+      printf '%s\n' "$$head"; \
+    fi; \
   fi)
 
 GIT_COMMIT := $(shell printf '%s' '$(GIT_COMMIT_FULL)' | cut -c1-12)
