@@ -12,8 +12,6 @@ optdepends=('gtk4-layer-shell: native Wayland shell surfaces (layer-shell)'
             'labwc: recommended Wayland compositor for the LH4051-DE session'
             'appstream: App Store catalog search')
 makedepends=('git' 'base-devel' 'pkgconf' 'gtk4-layer-shell')
-provides=('lh4051-de')
-conflicts=('lh4051-de')
 source=("LH4051-DE::git+https://github.com/kuznix-code/LH4051-DE.git#commit=@COMMIT@")
 sha256sums=('SKIP')
 
