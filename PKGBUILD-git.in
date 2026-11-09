@@ -1,5 +1,6 @@
 # LH4051-DE Arch Linux package template
-pkgname=lh4051-de-git
+pkgbase=lh4051-de
+pkgname=('lh4051-de' 'lh4051-de-updater' 'lh4051-de-bootstrap')
 pkgver=@PKGVER@
 pkgrel=1
 pkgdesc='Longhorn 4051-inspired desktop environment'
@@ -11,32 +12,26 @@ optdepends=('gtk4-layer-shell: native Wayland shell surfaces (layer-shell)'
             'labwc: recommended Wayland compositor for the LH4051-DE session'
             'appstream: App Store catalog search')
 makedepends=('git' 'base-devel' 'pkgconf' 'gtk4-layer-shell')
-provides=('lh4051-de')
-conflicts=('lh4051-de')
-source=("git+https://github.com/kuznix-code/LH4051-DE.git")
+source=("LH4051-DE::git+https://github.com/kuznix-code/LH4051-DE.git#commit=@COMMIT@")
 sha256sums=('SKIP')
-
-pkgver() {
-    cd "$srcdir/LH4051-DE"
-
-    # Git snapshot version: <latest-tag>.r<commits-since-tag>.<short-head>
-    local tag commits short
-    tag="$(git describe --tags --abbrev=0 2>/dev/null || printf '0.0.0')"
-    tag="${tag#v}"
-    tag="$(printf '%s' "$tag" | sed 's/[^A-Za-z0-9.+_]/./g')"
-    commits="$(git rev-list --count "$(git describe --tags --abbrev=0 2>/dev/null || true)"..HEAD 2>/dev/null || printf '0')"
-    short="$(git rev-parse --short=7 HEAD)"
-    printf '%s.r%s.%s' "$tag" "$commits" "$short"
-}
 
 build() {
     cd "$srcdir/LH4051-DE"
     make PREFIX=/usr
 }
 
-package() {
+package_lh4051-de() {
     cd "$srcdir/LH4051-DE"
-    make DESTDIR="$pkgdir" PREFIX="/usr" install
+    make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+package_lh4051-de-updater() {
+    depends=('lh4051-de')
+    install -Dm755 "$srcdir/LH4051-DE/scripts/lh4051-de-updater" "$pkgdir/usr/bin/lh4051-de-updater"
+}
+
+package_lh4051-de-bootstrap() {
+    install -Dm755 "$srcdir/LH4051-DE/scripts/lh4051-de-bootstrap" "$pkgdir/usr/bin/lh4051-de-bootstrap"
 }
 
 # Development snapshot (make dist-arch-git). Stable releases use PKGBUILD.in.
