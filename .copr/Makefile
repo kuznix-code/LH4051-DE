@@ -45,7 +45,8 @@ GIT_TAGS := $(shell git_dir="$(PROJECT_ROOT)/.git"; if [ -f "$git_dir" ]; then g
 LATEST_TAG := $(lastword $(GIT_TAGS))
 RPM_VERSION := $(if $(LATEST_TAG),$(patsubst v%,%,$(LATEST_TAG)),$(shell sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' "$(PROJECT_ROOT)/src/longhorn.h"))
 BUILD_DATE_NUM := $(shell date -u '+%Y%m%d')
-RPM_RELEASE := 1.$(BUILD_DATE_NUM)git$(GIT_COMMIT)%{?dist}
+PKGREL ?= 1
+RPM_RELEASE := $(PKGREL).$(BUILD_DATE_NUM)git$(GIT_COMMIT)%{?dist}
 BUILD_DATE := $(shell date -u '+%a %b %d %Y')
 
 .PHONY: srpm check
