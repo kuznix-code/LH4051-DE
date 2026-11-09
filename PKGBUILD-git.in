@@ -31,6 +31,7 @@ package_lh4051-de-updater() {
 }
 
 package_lh4051-de-bootstrap() {
+    depends=()
     install -Dm755 "$srcdir/LH4051-DE/scripts/lh4051-de-bootstrap" "$pkgdir/usr/bin/lh4051-de-bootstrap"
 }
 
