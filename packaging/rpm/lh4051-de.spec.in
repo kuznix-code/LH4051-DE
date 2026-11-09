@@ -90,8 +90,7 @@ source into a chosen prefix.
 %install
 %make_install PREFIX=%{_prefix} PKG_VERSION=@PKG_VERSION@ \
     CFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}"
-%make_install install-updater PREFIX=%{_prefix}
-%make_install install-bootstrap PREFIX=%{_prefix}
+make DESTDIR=%{buildroot} PREFIX=%{_prefix} install-updater install-bootstrap
 
 %files
 %license LICENSE
