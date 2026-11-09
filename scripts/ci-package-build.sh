@@ -106,7 +106,7 @@ arch)
     cp -a "$SRC"/. "$bdir"/
     arch="$(uname -m)"
     sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@ARCH@|$arch|g" \
-        -e "s|@COMMIT@|$(git rev-parse HEAD)|g" PKGBUILD-git.in > "$bdir/PKGBUILD"
+        -e "s|@COMMIT@|$(git rev-parse HEAD)|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" PKGBUILD-git.in > "$bdir/PKGBUILD"
     chown -R builder: "$bdir"
     su builder -c "cd '$bdir' && PKGDEST='$bdir/out' PKGEXT='.pkg.tar.zst' makepkg -f --nocolor --noconfirm"
     for f in "$bdir"/out/*.pkg.tar.zst; do
