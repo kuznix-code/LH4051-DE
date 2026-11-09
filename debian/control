@@ -23,7 +23,24 @@ Description: Longhorn 4051-inspired desktop environment
  start menu, file manager, settings and app store, plus a session wrapper
  that starts a compositor and the shell.
  .
- This package contains the shell, the session wrapper and the updater script.
+ This package contains the desktop shell and its session wrapper.
+
+Package: lh4051-de-updater
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (= ${source:Version}),
+         ${misc:Depends}
+Description: LH4051-DE optional updater
+ The optional command-line updater downloads and installs supported LH4051-DE
+ releases or builds the project from source where supported.
+
+Package: lh4051-de-bootstrap
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: LH4051-DE dependency bootstrap tool
+ Optional helper for building GTK 4 and its dependencies from source into a
+ chosen installation prefix.
 
 Package: lh4051-de-data
 Architecture: all
