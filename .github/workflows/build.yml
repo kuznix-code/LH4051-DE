@@ -17,9 +17,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  cancel-stale-runs:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel older runs on this branch
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run list --repo "$GITHUB_REPOSITORY" --branch "$GITHUB_REF_NAME" --limit 100 \
+            --json databaseId,status,headSha \
+            --jq ".[] | select(.headSha != \"$GITHUB_SHA\" and (.status == \"queued\" or .status == \"in_progress\" or .status == \"waiting\" or .status == \"pending\")) | .databaseId" \
+            | while read -r run_id; do
+                [ -n "$run_id" ] || continue
+                echo "Cancelling stale workflow run $run_id"
+                gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY" || true
+              done
   # ---------------------------------------------------------------- Linux
   # Updater scripts: syntax only (they need GitHub to do real work)
   updater-scripts:
+    needs: cancel-stale-runs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +54,7 @@ jobs:
           if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
 
   linux:
+    needs: cancel-stale-runs
     name: linux-${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -71,6 +91,7 @@ jobs:
   # x86-64 microarchitecture levels. The plain linux-x64 build above is the baseline (v1) that runs on every
   # x86-64 PC; these are optional, faster builds that need a newer CPU (and the updater's --variant option).
   linux-x64-variants:
+    needs: cancel-stale-runs
     name: linux-${{ matrix.name }}
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -128,6 +149,7 @@ jobs:
   # (bookworm has no Docker image for it and its GTK 4.8 is older than the 4.10 LH4051-DE needs), so there is no
   # distribution container with a usable GTK for it; the updater compiles from source there.
   linux-containers:
+    needs: cancel-stale-runs
     name: linux-${{ matrix.name }}
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -184,6 +206,7 @@ jobs:
 
   # ---------------------------------------------------------------- macOS
   macos:
+    needs: cancel-stale-runs
     name: macos-${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -216,6 +239,7 @@ jobs:
   # ------------------------------------------------------------------ BSD
   # Experimental: builds inside a VM on a Linux runner. (OpenBSD/NetBSD are not built in CI.)
   freebsd:
+    needs: cancel-stale-runs
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -242,6 +266,7 @@ jobs:
   # MinGW-w64 through MSYS2. The plain MINGW64 environment is phased out
   # (no gtk4 package); x64 uses UCRT64, ARM64 uses CLANGARM64.
   windows-mingw:
+    needs: cancel-stale-runs
     name: windows-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental }}
@@ -316,6 +341,7 @@ jobs:
   # GTK runtime for imports that only exist on newer Windows. A "found" result means the GTK/MSYS2
   # runtime (not LH4051-DE itself) needs a Windows 7 capable build.
   windows-legacy:
+    needs: cancel-stale-runs
     name: windows-x64-legacy (7/8/8.1 check)
     runs-on: windows-latest
     continue-on-error: true
@@ -351,6 +377,7 @@ jobs:
   # Experimental: cl.exe + a prebuilt GTK4 from gvsbuild. GNU make and a
   # native pkgconf come from MSYS2 UCRT64; MSVC's environment is inherited.
   windows-msvc:
+    needs: cancel-stale-runs
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -398,7 +425,7 @@ jobs:
   # ci-build.txt carries the exact version and commit. The tag has no vX.Y.Z form, so stable/beta/lts modes ignore it.
   ci-release:
     if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
-    needs: [linux, linux-x64-variants, linux-containers, macos, freebsd, windows-mingw]
+    needs: [cancel-stale-runs, linux, linux-x64-variants, linux-containers, macos, freebsd, windows-mingw]
     runs-on: ubuntu-latest
     # Pushes to one branch can overlap (a build takes ~15 minutes). Two ci-release jobs deleting and recreating the same
     # "ci-<branch>" release at once make "gh release create" fail with "release with the same tag name already exists".
@@ -452,7 +479,7 @@ jobs:
   # -------------------------------------------------------------- Release
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, linux-x64-variants, linux-containers, macos, windows-mingw]
+    needs: [cancel-stale-runs, linux, linux-x64-variants, linux-containers, macos, windows-mingw]
     runs-on: ubuntu-latest
     permissions:
       contents: write
