@@ -90,7 +90,8 @@ source into a chosen prefix.
 %install
 %make_install PREFIX=%{_prefix} PKG_VERSION=@PKG_VERSION@ \
     CFLAGS="%{optflags}" LDFLAGS="%{build_ldflags}"
-install -D -m 0755 scripts/lh4051-de-bootstrap %{buildroot}%{_bindir}/lh4051-de-bootstrap
+%make_install install-updater PREFIX=%{_prefix}
+%make_install install-bootstrap PREFIX=%{_prefix}
 
 %files
 %license LICENSE
