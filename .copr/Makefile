@@ -37,7 +37,7 @@ GIT_COMMIT_FULL := $(shell \
     fi; \
   fi)
 
-GIT_COMMIT := $(shell printf '%s' '$(GIT_COMMIT_FULL)' | cut -c1-12)
+GIT_COMMIT := $(shell printf '%s' '$(GIT_COMMIT_FULL)' | cut -c1-7)
 PKG_VERSION := $(shell LH4051_GIT_COMMIT='$(GIT_COMMIT_FULL)' "$(VERSION_SCRIPT)" 2>/dev/null)
 # RPM EVR: latest upstream tag is Version; Release includes pkgrel, UTC date and commit.
 # Read tag names from .git metadata so the COPR builder does not need git.
