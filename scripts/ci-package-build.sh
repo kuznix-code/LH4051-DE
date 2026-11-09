@@ -103,7 +103,6 @@ arch)
     id builder >/dev/null 2>&1 || useradd -m builder
     bdir="/home/builder/build"
     rm -rf "$bdir"; mkdir -p "$bdir"
-    cp -a "$SRC"/. "$bdir"/
     arch="$(uname -m)"
     sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@ARCH@|$arch|g" \
         -e "s|@COMMIT@|$(git rev-parse HEAD)|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" PKGBUILD-git.in > "$bdir/PKGBUILD"
