@@ -229,7 +229,7 @@ comma := ,
 # Targets
 # ---------------------------------------------------------------------------
 .PHONY: all linux macos bsd win64 win64-legacy msvc run clean distclean check-deps show-config help \
-        install install-bin install-data install-session-x11 install-session-wayland uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
+        install install-bin install-updater install-bootstrap install-data install-session-x11 install-session-wayland uninstall sessions dist-linux dist-unix dist-macos dist-win64 dist-arch dist-arch-git dist-stable dist \
         installer-unix installer-macos installer-win
 
 all: $(BIN)
@@ -377,9 +377,14 @@ ifeq ($(UNIX_LIKE),)
 else
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/$(NAME),$(BIN))
 	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-session,scripts/lh4051-de-session)
-	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-updater,scripts/lh4051-de-updater)
 	@mkdir -p "$(DESTDIR)$(PREFIX)/share/lh4051-de" && printf '%s\n' "$(PKG_VERSION)" > "$(DESTDIR)$(PREFIX)/share/lh4051-de/version"
 endif
+
+install-updater:
+	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-updater,scripts/lh4051-de-updater)
+
+install-bootstrap:
+	$(call INSTALL_FILE,755,$(DESTDIR)$(PREFIX)/bin/lh4051-de-bootstrap,scripts/lh4051-de-bootstrap)
 
 install-data: $(APPS_OUT)
 ifeq ($(UNIX_LIKE),)
