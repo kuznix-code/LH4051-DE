@@ -278,9 +278,15 @@ line_of() { printf '%s' "${1#v}" | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/
 
 confirm() {
     [ "$YES" = 1 ] && return 0
-    [ -t 0 ] || die "not running interactively; pass --yes to continue"
-    printf '%s [Y/n] ' "$1"
-    read -r a
+    if [ -t 0 ]; then
+        printf '%s [Y/n] ' "$1"
+        read -r a || die "could not read confirmation; rerun with --yes"
+    elif [ -r /dev/tty ] && ( : </dev/tty ) 2>/dev/null; then
+        printf '%s [Y/n] ' "$1" >/dev/tty
+        IFS= read -r a </dev/tty || die "could not read confirmation from /dev/tty; rerun with --yes"
+    else
+        die "no interactive terminal is available; rerun with --yes"
+    fi
     case "$a" in n|N|no|NO) return 1 ;; esac
     return 0
 }
