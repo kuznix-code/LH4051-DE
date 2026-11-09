@@ -234,7 +234,13 @@ void lh4051_settings_open(GtkApplication *app)
     gtk_box_append(GTK_BOX(c), pref_check("Show sidebar", LH_PREF_SIDEBAR));
     gtk_box_append(GTK_BOX(box), c);
 
-    gtk_box_append(GTK_BOX(box), updater_card(state));
+    {
+        char *updater = g_find_program_in_path("lh4051-de-updater");
+        if (updater) {
+            gtk_box_append(GTK_BOX(box), updater_card(state));
+            g_free(updater);
+        }
+    }
 
     c = card("System", "Current session information.");
     text = g_strdup_printf("LH4051-DE %s", LH4051_VERSION);
