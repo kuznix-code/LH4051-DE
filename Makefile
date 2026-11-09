@@ -470,7 +470,7 @@ dist-arch dist-stable:
 # Arch package from the current git HEAD (development snapshot).
 dist-arch-git:
 	@command -v makepkg >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1 || { echo "dist-arch-git needs pacman/makepkg"; exit 2; }
-	@sed -e "s/@PKGVER@/0.0.0/g" -e "s/@ARCH@/$(shell uname -m)/g" PKGBUILD-git.in > PKGBUILD
+	@sed -e "s|@PKGVER@|0.0.0|g" -e "s|@ARCH@|$(shell uname -m)|g" -e "s|@COMMIT@|$(shell git rev-parse HEAD)|g" PKGBUILD-git.in > PKGBUILD
 	@makepkg -f
 
 dist: dist-arch
