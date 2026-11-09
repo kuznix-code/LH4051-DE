@@ -17,7 +17,7 @@ sha256sums=('SKIP')
 
 build() {
     cd "$srcdir/LH4051-DE"
-    make PREFIX=/usr
+    make PREFIX=/usr PKG_VERSION="$pkgver"
 }
 
 package_lh4051-de() {
