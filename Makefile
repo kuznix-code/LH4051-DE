@@ -464,13 +464,13 @@ dist-win64:
 # Arch package, stable release (needs the v$(VERSION) tag on the remote).
 dist-arch dist-stable:
 	@command -v makepkg >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1 || { echo "dist-arch needs pacman/makepkg"; exit 2; }
-	@sed -e "s/@PKGVER@/$(VERSION)/g" -e "s/@ARCH@/$(shell uname -m)/g" PKGBUILD.in > PKGBUILD
+	@sed -e "s/@PKGVER@/$(VERSION)/g" -e "s/@ARCH@/$(shell uname -m)/g" -e "s|@PKG_VERSION@|$(VERSION)|g" PKGBUILD.in > PKGBUILD
 	@makepkg -f
 
 # Arch package from the current git HEAD (development snapshot).
 dist-arch-git:
 	@command -v makepkg >/dev/null 2>&1 && command -v pacman >/dev/null 2>&1 || { echo "dist-arch-git needs pacman/makepkg"; exit 2; }
-	@sed -e "s|@PKGVER@|0.0.0|g" -e "s|@ARCH@|$(shell uname -m)|g" -e "s|@COMMIT@|$(shell git rev-parse HEAD)|g" PKGBUILD-git.in > PKGBUILD
+	@sed -e "s|@PKGVER@|0.0.0|g" -e "s|@ARCH@|$(shell uname -m)|g" -e "s|@COMMIT@|$(shell git rev-parse HEAD)|g" -e "s|@PKG_VERSION@|$(PKG_VERSION)|g" PKGBUILD-git.in > PKGBUILD
 	@makepkg -f
 
 dist: dist-arch
