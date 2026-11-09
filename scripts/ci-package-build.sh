@@ -19,24 +19,33 @@ WORK="${TMPDIR:-/tmp}/lh4051-de-pkg"
 OUT="$SRC/dist"
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
 
-# Per-format version spellings of the same upstream version.
-#   deb/rpm: pre-releases use "~" so they sort before the final release (0.2.0~dev... < 0.2.0)
-#   arch:    no "~" or "-" allowed in pkgver
-#   apk:     digits and dots plus an optional suffix (_beta1, _rc1, _git<date>);
-#            0.2.0.dev.20261101.a31e706 -> 0.2.0_git20261101, 0.1.1 -> 0.1.1
-VER_TILDE="$(printf '%s' "$PKG_VERSION" | sed -E 's/-/~/; s/\.(dev|alpha|beta|rc)/~\1/')"
-VER_ARCH="$(printf '%s' "$PKG_VERSION" | tr '~-' '__')"
+# Per-format package versions are derived from the nearest reachable upstream tag.
+DATE_UTC="$(date -u +%Y%m%d)"
+TAG_REF="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+if [ -n "$TAG_REF" ]; then
+    TAG="${TAG_REF#v}"
+    COMMITS="$(git rev-list --count "$TAG_REF"..HEAD)"
+else
+    TAG="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)"
+    COMMITS="$(git rev-list --count HEAD)"
+fi
+SHORT_COMMIT="$(git rev-parse --short=7 HEAD)"
+TODAY_COMMITS="$(git rev-list --count --since="$(date -u +%Y-%m-%dT00:00:00Z)" HEAD)"
+PKGREL="${PKGREL:-1}"
+VER_RPM="$TAG"
+RPM_RELEASE="$PKGREL.$DATE_UTC"git"$SHORT_COMMIT"
+VER_ARCH="$TAG.r$COMMITS.$SHORT_COMMIT"
+VER_DEB="$TAG+git$DATE_UTC-$PKGREL+$TODAY_COMMITS"
 VER_APK="$(printf '%s' "$PKG_VERSION" | sed -E 's/-(alpha|beta|rc)\.?([0-9]+)$/_\1\2/')"
 case "$VER_APK" in
-    *_alpha[0-9]*|*_beta[0-9]*|*_rc[0-9]*) ;;   # already a valid apk pre-release suffix
+    *_alpha[0-9]*|*_beta[0-9]*|*_rc[0-9]*) ;;
     *)
         apk_base="$(printf '%s' "$VER_APK" | sed -nE 's/^([0-9]+(\.[0-9]+){0,2}).*/\1/p')"
         apk_day="$(printf '%s' "$VER_APK" | sed -nE 's/.*\.([0-9]{8})(\..*)?$/\1/p')"
         if [ "$VER_APK" != "$apk_base" ] && [ -n "$apk_day" ]; then VER_APK="${apk_base}_git${apk_day}"; else VER_APK="$apk_base"; fi
         ;;
 esac
-echo "package version: $PKG_VERSION  (deb/rpm: $VER_TILDE, arch: $VER_ARCH, apk: $VER_APK)   machine: $(uname -m)"
-
+echo "package versions: deb=$VER_DEB rpm=$VER_RPM-$RPM_RELEASE arch=$VER_ARCH-$PKGREL apk=$VER_APK   machine: $(uname -m)"
 # Copy of the working tree without VCS data and previous build output.
 copy_tree() {
     mkdir -p "$1"
@@ -51,10 +60,10 @@ deb)
         libgtk-4-dev libglib2.0-dev-bin
     apt-get install -y --no-install-recommends libgtk4-layer-shell-dev || echo "gtk4-layer-shell not available; building composite-only"
 
-    dir="$WORK/lh4051-de-$VER_TILDE"
+    dir="$WORK/lh4051-de-$VER_DEB"
     copy_tree "$dir"
     cat > "$dir/debian/changelog" <<CHANGELOG
-lh4051-de ($VER_TILDE) unstable; urgency=medium
+lh4051-de ($VER_DEB) unstable; urgency=medium
 
   * Automated build of $PKG_VERSION.
 
@@ -70,42 +79,36 @@ rpm)
     dnf -y install rpm-build gcc make tar gzip pkgconf-pkg-config gtk4-devel glib2-devel gtk4-layer-shell-devel
     top="$HOME/rpmbuild"
     mkdir -p "$top/SOURCES" "$top/SPECS"
-    copy_tree "$WORK/lh4051-de-$VER_TILDE"
-    tar -C "$WORK" -czf "$top/SOURCES/LH4051-DE-$VER_TILDE.tar.gz" "lh4051-de-$VER_TILDE"
-    # RPM requires a numeric Release; substitute the spec template placeholder.\n    RPM_RELEASE=1\n    sed -e "s|@VERSION@|$VER_TILDE|g" -e "s|@RELEASE@|$RPM_RELEASE|g" \\
-        -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@DATE@|$(date -u '+%a %b %d %Y')|g" \\
-        packaging/rpm/lh4051-de.spec.in > "$top/SPECS/LH4051-DE.spec"\n    rpmbuild -bb "$top/SPECS/LH4051-DE.spec"
+    source_dir="lh4051-de-$VER_RPM"
+    copy_tree "$WORK/$source_dir"
+    tar -C "$WORK" -czf "$top/SOURCES/LH4051-DE-$VER_RPM.tar.gz" "$source_dir"
+    sed -e "s|@VERSION@|$VER_RPM|g" -e "s|@RELEASE@|$RPM_RELEASE|g" \
+        -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@DATE@|$(date -u '+%a %b %d %Y')|g" \
+        packaging/rpm/lh4051-de.spec.in > "$top/SPECS/LH4051-DE.spec"
+    rpmbuild -bb "$top/SPECS/LH4051-DE.spec"
     for f in "$top"/RPMS/*/*.rpm; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%.noarch.rpm}" != "$f" ]; then continue; fi
         cp "$f" "$OUT"/
     done
     ;;
-
 arch)
-    # pacman's download sandbox (Landlock) does not work inside containers; CheckSpace cannot see the mount.
     PM="pacman --noconfirm --needed"
-    # (--disable-sandbox is not listed in --help on every pacman 7.x, so probe it instead of grepping.)
     if pacman --disable-sandbox --version >/dev/null 2>&1; then PM="$PM --disable-sandbox"; fi
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
-    # Arch Linux ARM's root filesystem ships without an initialised keyring.
     if [ ! -s /etc/pacman.d/gnupg/pubring.kbx ] && [ ! -s /etc/pacman.d/gnupg/pubring.gpg ]; then
         pacman-key --init
         for k in /usr/share/pacman/keyrings/*.gpg; do pacman-key --populate "$(basename "$k" .gpg)"; done
     fi
     $PM -Syu base-devel pkgconf gtk4 glib2 gtk4-layer-shell tar
-
-    # makepkg refuses to run as root.
     id builder >/dev/null 2>&1 || useradd -m builder
     bdir="/home/builder/build"
     rm -rf "$bdir"; mkdir -p "$bdir"
-    copy_tree "$WORK/lh4051-de-$VER_ARCH"
-    tar -C "$WORK" -czf "$bdir/lh4051-de-$VER_ARCH.tar.gz" "lh4051-de-$VER_ARCH"
+    cp -a "$SRC"/. "$bdir"/
     arch="$(uname -m)"
-    sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@ARCH@|$arch|g" \
-        packaging/arch/PKGBUILD.in > "$bdir/PKGBUILD"
+    sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@ARCH@|$arch|g" \
+        -e "s|@COMMIT@|$(git rev-parse HEAD)|g" PKGBUILD-git.in > "$bdir/PKGBUILD"
     chown -R builder: "$bdir"
     su builder -c "cd '$bdir' && PKGDEST='$bdir/out' PKGEXT='.pkg.tar.zst' makepkg -f --nocolor --noconfirm"
-    ls -l "$bdir/out"
     for f in "$bdir"/out/*.pkg.tar.zst; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%-any.pkg.tar.zst}" != "$f" ]; then continue; fi
         cp "$f" "$OUT"/
