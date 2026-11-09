@@ -79,42 +79,36 @@ rpm)
     dnf -y install rpm-build gcc make tar gzip pkgconf-pkg-config gtk4-devel glib2-devel gtk4-layer-shell-devel
     top="$HOME/rpmbuild"
     mkdir -p "$top/SOURCES" "$top/SPECS"
-    copy_tree "$WORK/lh4051-de-$VER_TILDE"
-    tar -C "$WORK" -czf "$top/SOURCES/LH4051-DE-$VER_TILDE.tar.gz" "lh4051-de-$VER_TILDE"
-    # RPM requires a numeric Release; substitute the spec template placeholder.\n    RPM_RELEASE=1\n    sed -e "s|@VERSION@|$VER_TILDE|g" -e "s|@RELEASE@|$RPM_RELEASE|g" \\
-        -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@DATE@|$(date -u '+%a %b %d %Y')|g" \\
-        packaging/rpm/lh4051-de.spec.in > "$top/SPECS/LH4051-DE.spec"\n    rpmbuild -bb "$top/SPECS/LH4051-DE.spec"
+    source_dir="lh4051-de-$VER_RPM"
+    copy_tree "$WORK/$source_dir"
+    tar -C "$WORK" -czf "$top/SOURCES/LH4051-DE-$VER_RPM.tar.gz" "$source_dir"
+    sed -e "s|@VERSION@|$VER_RPM|g" -e "s|@RELEASE@|$RPM_RELEASE|g" \
+        -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@DATE@|$(date -u '+%a %b %d %Y')|g" \
+        packaging/rpm/lh4051-de.spec.in > "$top/SPECS/LH4051-DE.spec"
+    rpmbuild -bb "$top/SPECS/LH4051-DE.spec"
     for f in "$top"/RPMS/*/*.rpm; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%.noarch.rpm}" != "$f" ]; then continue; fi
         cp "$f" "$OUT"/
     done
     ;;
-
 arch)
-    # pacman's download sandbox (Landlock) does not work inside containers; CheckSpace cannot see the mount.
     PM="pacman --noconfirm --needed"
-    # (--disable-sandbox is not listed in --help on every pacman 7.x, so probe it instead of grepping.)
     if pacman --disable-sandbox --version >/dev/null 2>&1; then PM="$PM --disable-sandbox"; fi
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
-    # Arch Linux ARM's root filesystem ships without an initialised keyring.
     if [ ! -s /etc/pacman.d/gnupg/pubring.kbx ] && [ ! -s /etc/pacman.d/gnupg/pubring.gpg ]; then
         pacman-key --init
         for k in /usr/share/pacman/keyrings/*.gpg; do pacman-key --populate "$(basename "$k" .gpg)"; done
     fi
     $PM -Syu base-devel pkgconf gtk4 glib2 gtk4-layer-shell tar
-
-    # makepkg refuses to run as root.
     id builder >/dev/null 2>&1 || useradd -m builder
     bdir="/home/builder/build"
     rm -rf "$bdir"; mkdir -p "$bdir"
-    copy_tree "$WORK/lh4051-de-$VER_ARCH"
-    tar -C "$WORK" -czf "$bdir/lh4051-de-$VER_ARCH.tar.gz" "lh4051-de-$VER_ARCH"
+    cp -a "$SRC"/. "$bdir"/
     arch="$(uname -m)"
-    sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@ARCH@|$arch|g" \
-        packaging/arch/PKGBUILD.in > "$bdir/PKGBUILD"
+    sed -e "s|@PKGVER@|$VER_ARCH|g" -e "s|@ARCH@|$arch|g" \
+        -e "s|@COMMIT@|$(git rev-parse HEAD)|g" PKGBUILD-git.in > "$bdir/PKGBUILD"
     chown -R builder: "$bdir"
     su builder -c "cd '$bdir' && PKGDEST='$bdir/out' PKGEXT='.pkg.tar.zst' makepkg -f --nocolor --noconfirm"
-    ls -l "$bdir/out"
     for f in "$bdir"/out/*.pkg.tar.zst; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%-any.pkg.tar.zst}" != "$f" ]; then continue; fi
         cp "$f" "$OUT"/
