@@ -51,6 +51,8 @@ jobs:
           - { format: arch, arch: arm64,  runner: ubuntu-24.04-arm,  image: "alarm-local:latest",    data: "0", glob: "dist/*.pkg.tar.zst", rootfs: "ArchLinuxARM-aarch64-latest.tar.gz" }
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Artifact version
         run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
       - name: Import the Arch Linux ARM root filesystem
