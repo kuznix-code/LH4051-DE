@@ -12,6 +12,10 @@ on:
       - redesign-4051
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ---------------------------------------------------------------- Linux
   # Updater scripts: syntax only (they need GitHub to do real work)
@@ -393,7 +397,7 @@ jobs:
   # (dev, stable-dev, ...) download from it, so they need no GitHub token (raw Actions artifacts do).
   # ci-build.txt carries the exact version and commit. The tag has no vX.Y.Z form, so stable/beta/lts modes ignore it.
   ci-release:
-    if: always() && github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
     needs: [linux, linux-x64-variants, linux-containers, macos, freebsd, windows-mingw]
     runs-on: ubuntu-latest
     # Pushes to one branch can overlap (a build takes ~15 minutes). Two ci-release jobs deleting and recreating the same
@@ -423,12 +427,18 @@ jobs:
           cp artifacts/*Installer* out/ 2>/dev/null || true
           ls out | grep -q . || { echo "::warning::no installers were built; not publishing $tag"; exit 0; }
           printf 'version=%s\nsha=%s\nbranch=%s\n' "$version" "$GITHUB_SHA" "$BRANCH" > out/ci-build.txt
-          # Delete and recreate the rolling release. Deleting an absent release is fine; any other error stays visible.
-          # Retry, because the release and tag can take a moment to disappear after the delete.
+          # Update the rolling release in place; never delete/recreate its tag.
           published=
           for attempt in 1 2 3 4 5; do
-            gh release delete "$tag" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || echo "::notice::delete of $tag skipped or failed (attempt $attempt)"
-            if gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              if gh release upload "$tag" out/* --clobber --repo "$GITHUB_REPOSITORY" &&
+                 gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+                   --title "CI build of $BRANCH ($version)" \
+                   --notes "Rolling build of the $BRANCH branch at ${GITHUB_SHA::7}. Not a release; use LH4051-DE Updater (dev modes)."; then
+                published=1
+                break
+              fi
+            elif gh release create "$tag" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
               --title "CI build of $BRANCH ($version)" \
               --notes "Rolling build of the $BRANCH branch at ${GITHUB_SHA::7}. Not a release; use LH4051-DE Updater (dev modes)."; then
               published=1
