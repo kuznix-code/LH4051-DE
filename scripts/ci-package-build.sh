@@ -72,9 +72,9 @@ rpm)
     mkdir -p "$top/SOURCES" "$top/SPECS"
     copy_tree "$WORK/lh4051-de-$VER_TILDE"
     tar -C "$WORK" -czf "$top/SOURCES/LH4051-DE-$VER_TILDE.tar.gz" "lh4051-de-$VER_TILDE"
-    sed -e "s|@VERSION@|$VER_TILDE|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@DATE@|$(date -u '+%a %b %d %Y')|g" \
-        packaging/rpm/lh4051-de.spec.in > "$top/SPECS/LH4051-DE.spec"
-    rpmbuild -bb "$top/SPECS/LH4051-DE.spec"
+    # RPM requires a numeric Release; substitute the spec template placeholder.\n    RPM_RELEASE=1\n    sed -e "s|@VERSION@|$VER_TILDE|g" -e "s|@RELEASE@|$RPM_RELEASE|g" \\
+        -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@DATE@|$(date -u '+%a %b %d %Y')|g" \\
+        packaging/rpm/lh4051-de.spec.in > "$top/SPECS/LH4051-DE.spec"\n    rpmbuild -bb "$top/SPECS/LH4051-DE.spec"
     for f in "$top"/RPMS/*/*.rpm; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%.noarch.rpm}" != "$f" ]; then continue; fi
         cp "$f" "$OUT"/
