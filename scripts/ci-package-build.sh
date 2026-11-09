@@ -19,24 +19,33 @@ WORK="${TMPDIR:-/tmp}/lh4051-de-pkg"
 OUT="$SRC/dist"
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
 
-# Per-format version spellings of the same upstream version.
-#   deb/rpm: pre-releases use "~" so they sort before the final release (0.2.0~dev... < 0.2.0)
-#   arch:    no "~" or "-" allowed in pkgver
-#   apk:     digits and dots plus an optional suffix (_beta1, _rc1, _git<date>);
-#            0.2.0.dev.20261101.a31e706 -> 0.2.0_git20261101, 0.1.1 -> 0.1.1
-VER_TILDE="$(printf '%s' "$PKG_VERSION" | sed -E 's/-/~/; s/\.(dev|alpha|beta|rc)/~\1/')"
-VER_ARCH="$(printf '%s' "$PKG_VERSION" | tr '~-' '__')"
+# Per-format package versions are derived from the nearest reachable upstream tag.
+DATE_UTC="$(date -u +%Y%m%d)"
+TAG_REF="$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)"
+if [ -n "$TAG_REF" ]; then
+    TAG="${TAG_REF#v}"
+    COMMITS="$(git rev-list --count "$TAG_REF"..HEAD)"
+else
+    TAG="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)"
+    COMMITS="$(git rev-list --count HEAD)"
+fi
+SHORT_COMMIT="$(git rev-parse --short=7 HEAD)"
+TODAY_COMMITS="$(git rev-list --count --since="$(date -u +%Y-%m-%dT00:00:00Z)" HEAD)"
+PKGREL="${PKGREL:-1}"
+VER_RPM="$TAG"
+RPM_RELEASE="$PKGREL.$DATE_UTC"git"$SHORT_COMMIT"
+VER_ARCH="$TAG.r$COMMITS.$SHORT_COMMIT"
+VER_DEB="$TAG+git$DATE_UTC-$PKGREL+$TODAY_COMMITS"
 VER_APK="$(printf '%s' "$PKG_VERSION" | sed -E 's/-(alpha|beta|rc)\.?([0-9]+)$/_\1\2/')"
 case "$VER_APK" in
-    *_alpha[0-9]*|*_beta[0-9]*|*_rc[0-9]*) ;;   # already a valid apk pre-release suffix
+    *_alpha[0-9]*|*_beta[0-9]*|*_rc[0-9]*) ;;
     *)
         apk_base="$(printf '%s' "$VER_APK" | sed -nE 's/^([0-9]+(\.[0-9]+){0,2}).*/\1/p')"
         apk_day="$(printf '%s' "$VER_APK" | sed -nE 's/.*\.([0-9]{8})(\..*)?$/\1/p')"
         if [ "$VER_APK" != "$apk_base" ] && [ -n "$apk_day" ]; then VER_APK="${apk_base}_git${apk_day}"; else VER_APK="$apk_base"; fi
         ;;
 esac
-echo "package version: $PKG_VERSION  (deb/rpm: $VER_TILDE, arch: $VER_ARCH, apk: $VER_APK)   machine: $(uname -m)"
-
+echo "package versions: deb=$VER_DEB rpm=$VER_RPM-$RPM_RELEASE arch=$VER_ARCH-$PKGREL apk=$VER_APK   machine: $(uname -m)"
 # Copy of the working tree without VCS data and previous build output.
 copy_tree() {
     mkdir -p "$1"
@@ -51,10 +60,10 @@ deb)
         libgtk-4-dev libglib2.0-dev-bin
     apt-get install -y --no-install-recommends libgtk4-layer-shell-dev || echo "gtk4-layer-shell not available; building composite-only"
 
-    dir="$WORK/lh4051-de-$VER_TILDE"
+    dir="$WORK/lh4051-de-$VER_DEB"
     copy_tree "$dir"
     cat > "$dir/debian/changelog" <<CHANGELOG
-lh4051-de ($VER_TILDE) unstable; urgency=medium
+lh4051-de ($VER_DEB) unstable; urgency=medium
 
   * Automated build of $PKG_VERSION.
 
