@@ -41,9 +41,9 @@ GIT_COMMIT := $(shell printf '%s' '$(GIT_COMMIT_FULL)' | cut -c1-12)
 PKG_VERSION := $(shell LH4051_GIT_COMMIT='$(GIT_COMMIT_FULL)' "$(VERSION_SCRIPT)" 2>/dev/null)
 # RPM EVR: latest upstream tag is Version; Release includes pkgrel, UTC date and commit.
 # Read tag names from .git metadata so the COPR builder does not need git.
-GIT_TAGS := $(shell git_dir="$(PROJECT_ROOT)/.git"; if [ -f "$git_dir" ]; then gd="$(sed -n 's/^gitdir: //p' "$git_dir")"; [ -z "$gd" ] || { case "$gd" in /*) git_dir="$gd";; *) git_dir="$(PROJECT_ROOT)/$gd";; esac; }; fi; { find "$git_dir/refs/tags" -type f -print 2>/dev/null | sed "s|^$git_dir/refs/tags/||"; if [ -r "$git_dir/packed-refs" ]; then awk '!/^#/ && !/^\\^/ && / refs\\/tags\\// { sub(/^.*refs\\/tags\\//, ""); print }' "$git_dir/packed-refs"; fi; } | sort -Vu)
+GIT_TAGS := $(shell git_dir="$(PROJECT_ROOT)/.git"; if [ -f "$git_dir" ]; then gd="$(sed -n 's/^gitdir: //p' "$git_dir")"; [ -z "$gd" ] || { case "$gd" in /*) git_dir="$gd";; *) git_dir="$(PROJECT_ROOT)/$gd";; esac; }; fi; { find "$git_dir/refs/tags" -type f -print 2>/dev/null | sed "s|^$git_dir/refs/tags/||"; if [ -r "$git_dir/packed-refs" ]; then awk '!/^#/ && !/^\^/ && / refs\/tags\// { sub(/^.*refs\/tags\//, ""); print }' "$git_dir/packed-refs"; fi; } | sort -Vu)
 LATEST_TAG := $(lastword $(GIT_TAGS))
-RPM_VERSION := $(if $(LATEST_TAG),$(patsubst v%,%,$(LATEST_TAG)),$(shell sed -n 's/^#define LH4051_VERSION "\\(.*\\)"/\\1/p' "$(PROJECT_ROOT)/src/longhorn.h"))
+RPM_VERSION := $(if $(LATEST_TAG),$(patsubst v%,%,$(LATEST_TAG)),$(shell sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' "$(PROJECT_ROOT)/src/longhorn.h"))
 BUILD_DATE_NUM := $(shell date -u '+%Y%m%d')
 RPM_RELEASE := 1.$(BUILD_DATE_NUM)git$(GIT_COMMIT)%{?dist}
 BUILD_DATE := $(shell date -u '+%a %b %d %Y')
