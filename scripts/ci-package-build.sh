@@ -14,6 +14,14 @@ set -eu
 : "${PKG_VERSION:?PKG_VERSION is required}"
 BUILD_DATA="${BUILD_DATA:-1}"
 
+# Arch Linux ARM's container kernel may not support Landlock. Configure
+# pacman before any bootstrap install (including the Git install below).
+if [ "$FORMAT" = "arch" ] && command -v pacman >/dev/null 2>&1; then
+    if ! grep -Eq '^[[:space:]]*DisableSandbox([[:space:]]|$)' /etc/pacman.conf; then
+        sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+    fi
+fi
+
 # The build runs inside minimal distribution containers, which do not necessarily
 # include Git even though package versioning below depends on it.
 if ! command -v git >/dev/null 2>&1; then
@@ -119,11 +127,6 @@ rpm)
     done
     ;;
 arch)
-    # Docker/CI kernels may not expose Landlock, which pacman 7 uses for
-    # download sandboxing. Disable it in the [options] section for containers.
-    if ! grep -Eq '^[[:space:]]*DisableSandbox([[:space:]]|$)' /etc/pacman.conf; then
-        sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
-    fi
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
     if [ ! -s /etc/pacman.d/gnupg/pubring.kbx ] && [ ! -s /etc/pacman.d/gnupg/pubring.gpg ]; then
         pacman-key --init
