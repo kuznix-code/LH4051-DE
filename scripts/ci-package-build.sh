@@ -48,6 +48,13 @@ else
     TAG="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)"
     COMMITS="$(git rev-list --count HEAD)"
 fi
+# RPM Version fields cannot contain hyphens. CI refs such as "ci-main" are
+# not release versions, so fall back to the project's declared version.
+case "$TAG" in
+    *-*)
+        TAG="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)"
+        ;;
+esac
 SHORT_COMMIT="$(git rev-parse --short=7 HEAD)"
 TODAY_COMMITS="$(git rev-list --count --since="$(date -u +%Y-%m-%dT00:00:00Z)" HEAD)"
 PKGREL="${PKGREL:-1}"
