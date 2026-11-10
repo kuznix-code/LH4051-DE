@@ -119,14 +119,17 @@ rpm)
     done
     ;;
 arch)
-    PM="pacman --noconfirm --needed"
-    if pacman --disable-sandbox --version >/dev/null 2>&1; then PM="$PM --disable-sandbox"; fi
+    # Docker/CI kernels may not expose Landlock, which pacman 7 uses for
+    # download sandboxing. Disable it in the [options] section for containers.
+    if ! grep -Eq '^[[:space:]]*DisableSandbox([[:space:]]|$)' /etc/pacman.conf; then
+        sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+    fi
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
     if [ ! -s /etc/pacman.d/gnupg/pubring.kbx ] && [ ! -s /etc/pacman.d/gnupg/pubring.gpg ]; then
         pacman-key --init
         for k in /usr/share/pacman/keyrings/*.gpg; do pacman-key --populate "$(basename "$k" .gpg)"; done
     fi
-    $PM -Syu base-devel pkgconf gtk4 glib2 gtk4-layer-shell tar
+    pacman --noconfirm --needed -Syu base-devel pkgconf gtk4 glib2 gtk4-layer-shell tar
     id builder >/dev/null 2>&1 || useradd -m builder
     bdir="/home/builder/build"
     rm -rf "$bdir"; mkdir -p "$bdir"
