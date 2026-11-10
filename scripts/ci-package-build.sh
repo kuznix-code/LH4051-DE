@@ -14,6 +14,24 @@ set -eu
 : "${PKG_VERSION:?PKG_VERSION is required}"
 BUILD_DATA="${BUILD_DATA:-1}"
 
+# The build runs inside minimal distribution containers, which do not necessarily
+# include Git even though package versioning below depends on it.
+if ! command -v git >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y --no-install-recommends git
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf -y install git
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm --needed git
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache git
+    else
+        echo "error: Git is required but no supported package manager was found" >&2
+        exit 127
+    fi
+fi
+
 SRC="$(pwd)"
 WORK="${TMPDIR:-/tmp}/lh4051-de-pkg"
 OUT="$SRC/dist"
