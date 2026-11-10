@@ -15,11 +15,22 @@ set -eu
 BUILD_DATA="${BUILD_DATA:-1}"
 
 # Arch Linux ARM's container kernel may not support Landlock. Configure
-# pacman before any bootstrap install (including the Git install below).
+# pacman and repair its keyring before any bootstrap package installation.
 if [ "$FORMAT" = "arch" ] && command -v pacman >/dev/null 2>&1; then
     if ! grep -Eq '^[[:space:]]*DisableSandbox([[:space:]]|$)' /etc/pacman.conf; then
         sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
     fi
+
+    # Imported Arch Linux ARM root filesystems can carry an unusable keyring
+    # directory (wrong ownership/mode or an uninitialized public keyring).
+    install -d -m 700 -o root -g root /etc/pacman.d/gnupg
+    chown -R root:root /etc/pacman.d/gnupg
+    chmod -R u+rwX,go-rwx /etc/pacman.d/gnupg
+    pacman-key --init
+    for keyring in /usr/share/pacman/keyrings/*.gpg; do
+        [ -f "$keyring" ] || continue
+        pacman-key --populate "$(basename "$keyring" .gpg)"
+    done
 fi
 
 # Git is required for version metadata, but minimal CI build containers may omit it.
@@ -127,10 +138,6 @@ rpm)
     ;;
 arch)
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
-    if [ ! -s /etc/pacman.d/gnupg/pubring.kbx ] && [ ! -s /etc/pacman.d/gnupg/pubring.gpg ]; then
-        pacman-key --init
-        for k in /usr/share/pacman/keyrings/*.gpg; do pacman-key --populate "$(basename "$k" .gpg)"; done
-    fi
     pacman --noconfirm --needed -Syu base-devel pkgconf gtk4 glib2 gtk4-layer-shell tar
     id builder >/dev/null 2>&1 || useradd -m builder
     bdir="/home/builder/build"
