@@ -33,6 +33,8 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 SRC="$(pwd)"
+# The container may run as root while the mounted checkout belongs to another UID.
+git config --global --add safe.directory "$SRC"
 WORK="${TMPDIR:-/tmp}/lh4051-de-pkg"
 OUT="$SRC/dist"
 rm -rf "$WORK"; mkdir -p "$WORK" "$OUT"
