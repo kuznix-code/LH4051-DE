@@ -46,13 +46,13 @@ GIT_TAGS := $(shell \
   if [ -f "$${git_dir}" ]; then \
     gitdir_line="$$(sed -n 's/^gitdir: //p' "$${git_dir}")"; \
     if [ -n "$${gitdir_line}" ]; then \
-      case "$${gitdir_line}" in /*) git_dir="$${gitdir_line}";; *) git_dir="$(PROJECT_ROOT)/$${gitdir_line}";; esac; \
+      if [ "$${gitdir_line#/}" != "$${gitdir_line}" ]; then git_dir="$${gitdir_line}"; else git_dir="$(PROJECT_ROOT)/$${gitdir_line}"; fi; \
     fi; \
   fi; \
   { \
     find "$${git_dir}/refs/tags" -type f -print 2>/dev/null | sed "s|^$${git_dir}/refs/tags/||"; \
     if [ -r "$${git_dir}/packed-refs" ]; then \
-      awk '!/^#/ && !/^\\^/ && / refs\\/tags\\// { sub(/^.*refs\\/tags\\//, ""); print }' "$${git_dir}/packed-refs"; \
+      sed -n 's|^[0-9a-fA-F]* refs/tags/||p' "$${git_dir}/packed-refs"; \
     fi; \
   } | sort -Vu)
 LATEST_TAG := $(shell git -C "$(PROJECT_ROOT)" describe --tags --abbrev=0 HEAD 2>/dev/null || printf '%s' "$(lastword $(GIT_TAGS))")
