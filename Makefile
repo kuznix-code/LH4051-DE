@@ -351,9 +351,11 @@ show-config:
 # Install (unix-like) + session files
 # ---------------------------------------------------------------------------
 SESSION_DIR := $(BUILD)/data
-sessions: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(SESSION_DIR)/xsessions/lh4051-de.desktop
+SESSION_WMS := xfwm4 marco metacity icewm fluxbox
+X11_SESSION_FILES := $(SESSION_DIR)/xsessions/lh4051-de.desktop $(addprefix $(SESSION_DIR)/xsessions/lh4051-de-,$(addsuffix .desktop,$(SESSION_WMS)))
+sessions: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(X11_SESSION_FILES)
 
-$(SESSION_DIR)/%/lh4051-de.desktop: data/%/lh4051-de.desktop.in
+$(SESSION_DIR)/%: data/%.in
 	@mkdir -p $(@D)
 	@sed -e 's|@bindir@|$(PREFIX)/bin|g' -e 's|@version@|$(VERSION)|g' $< > $@
 
@@ -368,7 +370,8 @@ $(APPS_OUT): $(APPS_SRC)
 # install = install-bin (program, helper scripts, version stamp) + install-data (application menu entry)
 #         + install-session-x11 + install-session-wayland (login manager session entries).
 # The split lets distribution packages ship the architecture-independent files as separate packages:
-#   lh4051-de-data, lh4051-de-session (X11), lh4051-de-session-wayland (Wayland).
+#   lh4051-de-data, lh4051-de-session (Openbox), lh4051-de-session-{xfwm4,marco,metacity,icewm,fluxbox},
+#   and lh4051-de-session-wayland (Wayland).
 install: install-bin install-data install-session-x11 install-session-wayland
 
 install-bin: all
@@ -393,11 +396,13 @@ else
 	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop,$(APPS_OUT))
 endif
 
-install-session-x11: $(SESSION_DIR)/xsessions/lh4051-de.desktop
+install-session-x11: $(X11_SESSION_FILES)
 ifeq ($(UNIX_LIKE),)
 	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
 else
-	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop,$(SESSION_DIR)/xsessions/lh4051-de.desktop)
+	@for session in $(notdir $(X11_SESSION_FILES)); do \
+	  $(INSTALL) -D -m 644 "$(SESSION_DIR)/xsessions/$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$session" || exit $?; \
+	done
 endif
 
 install-session-wayland: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop
@@ -410,7 +415,7 @@ endif
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/lh4051-de-session $(DESTDIR)$(PREFIX)/bin/lh4051-de-updater \
 	  $(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop \
-	  $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop $(DESTDIR)$(PREFIX)/share/xsessions/lh4051-de.desktop
+	  $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop $(addprefix $(DESTDIR)$(PREFIX)/share/xsessions/,$(notdir $(X11_SESSION_FILES)))
 	rm -f $(DESTDIR)$(PREFIX)/share/lh4051-de/version
 	-rmdir $(DESTDIR)$(PREFIX)/share/lh4051-de 2>/dev/null
 
