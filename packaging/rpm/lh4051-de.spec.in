@@ -50,6 +50,51 @@ Requires:       openbox
 Adds the "LH4051-DE" X11 session entry to the login manager. The session runs
 the shell on top of the default window manager.
 
+%package -n LH4051-DE-session-xfwm4
+Summary:        Longhorn 4051-inspired desktop environment - Xfwm4 X11 session
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       xfwm4
+
+%description -n LH4051-DE-session-xfwm4
+Adds the "LH4051-DE (Xfwm4)" X11 session entry and starts the shell with xfwm4.
+
+%package -n LH4051-DE-session-marco
+Summary:        Longhorn 4051-inspired desktop environment - Marco X11 session
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       marco
+
+%description -n LH4051-DE-session-marco
+Adds the "LH4051-DE (Marco)" X11 session entry and starts the shell with marco.
+
+%package -n LH4051-DE-session-metacity
+Summary:        Longhorn 4051-inspired desktop environment - Metacity X11 session
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       metacity
+
+%description -n LH4051-DE-session-metacity
+Adds the "LH4051-DE (Metacity)" X11 session entry and starts the shell with metacity.
+
+%package -n LH4051-DE-session-icewm
+Summary:        Longhorn 4051-inspired desktop environment - Icewm X11 session
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       icewm
+
+%description -n LH4051-DE-session-icewm
+Adds the "LH4051-DE (Icewm)" X11 session entry and starts the shell with icewm.
+
+%package -n LH4051-DE-session-fluxbox
+Summary:        Longhorn 4051-inspired desktop environment - Fluxbox X11 session
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       fluxbox
+
+%description -n LH4051-DE-session-fluxbox
+Adds the "LH4051-DE (Fluxbox)" X11 session entry and starts the shell with fluxbox.
+
 %package -n LH4051-DE-session-wayland
 Summary:        Longhorn 4051-inspired desktop environment - Wayland session
 BuildArch:      noarch
@@ -106,6 +151,26 @@ make DESTDIR=%{buildroot} PREFIX=%{_prefix} install-updater install-bootstrap
 %files -n LH4051-DE-session
 %license LICENSE
 %{_datadir}/xsessions/lh4051-de.desktop
+
+%files -n LH4051-DE-session-xfwm4
+%license LICENSE
+%{_datadir}/xsessions/lh4051-de-xfwm4.desktop
+
+%files -n LH4051-DE-session-marco
+%license LICENSE
+%{_datadir}/xsessions/lh4051-de-marco.desktop
+
+%files -n LH4051-DE-session-metacity
+%license LICENSE
+%{_datadir}/xsessions/lh4051-de-metacity.desktop
+
+%files -n LH4051-DE-session-icewm
+%license LICENSE
+%{_datadir}/xsessions/lh4051-de-icewm.desktop
+
+%files -n LH4051-DE-session-fluxbox
+%license LICENSE
+%{_datadir}/xsessions/lh4051-de-fluxbox.desktop
 
 %files -n LH4051-DE-session-wayland
 %license LICENSE
