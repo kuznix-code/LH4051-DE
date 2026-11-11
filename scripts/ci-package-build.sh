@@ -4,9 +4,8 @@
 #
 #   FORMAT=deb|rpm|arch  package format (the container must be Debian, Fedora or Arch based)
 #   PKG_VERSION=...       project version (scripts/pkg-version.sh), e.g. 0.2.0.dev.20261101.a31e706 or 0.1.1
-#   BUILD_DATA=1|0        keep the architecture-independent packages (lh4051-de-data, lh4051-de-session,
-#                         lh4051-de-session-wayland) (1) or only the architecture-specific lh4051-de
-#                         package (0). CI sets 1 on x86_64 only.
+#   BUILD_DATA=1|0        keep architecture-independent data, session and meta packages (1), or only
+#                         the architecture-specific lh4051-de package (0). CI sets 1 on x86_64 only.
 #
 # Output: dist/*.deb, dist/*.rpm, dist/*.pkg.tar.zst
 set -eu
