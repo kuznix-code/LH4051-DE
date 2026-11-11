@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=LH4051-DE (Wayland, Sway)
+Comment=Longhorn Build 4051 style desktop (Wayland, Sway compositor)
+Exec=env LH4051_COMPOSITOR=sway @bindir@/lh4051-de-session --wayland
+TryExec=@bindir@/lh4051-de
+Type=Application
+DesktopNames=LH4051-DE
+X-LH4051-Version=@version@
