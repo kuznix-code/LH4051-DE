@@ -103,6 +103,46 @@ Requires:       labwc
 Adds the "LH4051-DE (Wayland)" session entry to the login manager. The session
 runs the shell on top of the labwc compositor.
 
+%package -n LH4051-DE-session-wayland-sway
+Summary:        Longhorn 4051-inspired desktop environment - Sway Wayland session
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       sway
+
+%description -n LH4051-DE-session-wayland-sway
+Adds the "LH4051-DE (Wayland, Sway)" session entry and starts the shell with Sway.
+
+%package -n LH4051-DE-sessions-x11-all
+Summary:        All LH4051-DE X11 sessions
+BuildArch:      noarch
+Requires:       LH4051-DE-session = %{version}-%{release}
+Requires:       LH4051-DE-session-xfwm4 = %{version}-%{release}
+Requires:       LH4051-DE-session-marco = %{version}-%{release}
+Requires:       LH4051-DE-session-metacity = %{version}-%{release}
+Requires:       LH4051-DE-session-icewm = %{version}-%{release}
+Requires:       LH4051-DE-session-fluxbox = %{version}-%{release}
+
+%description -n LH4051-DE-sessions-x11-all
+Meta-package installing every available LH4051-DE X11 session.
+
+%package -n LH4051-DE-sessions-wayland-all
+Summary:        All LH4051-DE Wayland sessions
+BuildArch:      noarch
+Requires:       LH4051-DE-session-wayland = %{version}-%{release}
+Requires:       LH4051-DE-session-wayland-sway = %{version}-%{release}
+
+%description -n LH4051-DE-sessions-wayland-all
+Meta-package installing every available LH4051-DE Wayland session.
+
+%package -n LH4051-DE-sessions-all
+Summary:        All LH4051-DE sessions
+BuildArch:      noarch
+Requires:       LH4051-DE-sessions-x11-all = %{version}-%{release}
+Requires:       LH4051-DE-sessions-wayland-all = %{version}-%{release}
+
+%description -n LH4051-DE-sessions-all
+Meta-package installing every available LH4051-DE X11 and Wayland session.
+
 %package -n LH4051-DE-updater
 Summary:        LH4051-DE updater
 BuildArch:      noarch
@@ -173,6 +213,16 @@ make DESTDIR=%{buildroot} PREFIX=%{_prefix} install-updater install-bootstrap
 %files -n LH4051-DE-session-wayland
 %license LICENSE
 %{_datadir}/wayland-sessions/lh4051-de.desktop
+
+%files -n LH4051-DE-session-wayland-sway
+%license LICENSE
+%{_datadir}/wayland-sessions/lh4051-de-sway.desktop
+
+%files -n LH4051-DE-sessions-x11-all
+
+%files -n LH4051-DE-sessions-wayland-all
+
+%files -n LH4051-DE-sessions-all
 
 %files -n LH4051-DE-updater
 %license LICENSE
