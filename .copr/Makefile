@@ -43,16 +43,16 @@ PKG_VERSION := $(shell LH4051_GIT_COMMIT='$(GIT_COMMIT_FULL)' "$(VERSION_SCRIPT)
 # Read tag names from .git metadata so the COPR builder does not need git.
 GIT_TAGS := $(shell \
   git_dir="$(PROJECT_ROOT)/.git"; \
-  if [ -f "$git_dir" ]; then \
-    gitdir_line="$(sed -n 's/^gitdir: //p' "$git_dir")"; \
-    if [ -n "$gitdir_line" ]; then \
-      case "$gitdir_line" in /*) git_dir="$gitdir_line";; *) git_dir="$(PROJECT_ROOT)/$gitdir_line";; esac; \
+  if [ -f "$${git_dir}" ]; then \
+    gitdir_line="$$(sed -n 's/^gitdir: //p' "$${git_dir}")"; \
+    if [ -n "$${gitdir_line}" ]; then \
+      case "$${gitdir_line}" in /*) git_dir="$${gitdir_line}";; *) git_dir="$(PROJECT_ROOT)/$${gitdir_line}";; esac; \
     fi; \
   fi; \
   { \
-    find "$git_dir/refs/tags" -type f -print 2>/dev/null | sed "s|^$git_dir/refs/tags/||"; \
-    if [ -r "$git_dir/packed-refs" ]; then \
-      awk '!/^#/ && !/^\\^/ && / refs\\/tags\\// { sub(/^.*refs\\/tags\\//, ""); print }' "$git_dir/packed-refs"; \
+    find "$${git_dir}/refs/tags" -type f -print 2>/dev/null | sed "s|^$${git_dir}/refs/tags/||"; \
+    if [ -r "$${git_dir}/packed-refs" ]; then \
+      awk '!/^#/ && !/^\\^/ && / refs\\/tags\\// { sub(/^.*refs\\/tags\\//, ""); print }' "$${git_dir}/packed-refs"; \
     fi; \
   } | sort -Vu)
 LATEST_TAG := $(shell git -C "$(PROJECT_ROOT)" describe --tags --abbrev=0 HEAD 2>/dev/null || printf '%s' "$(lastword $(GIT_TAGS))")
