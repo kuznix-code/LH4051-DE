@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=LH4051-DE (Marco)
+Comment=Longhorn Build 4051 style desktop (X11, Marco window manager)
+Exec=env LH4051_COMPOSITOR=marco @bindir@/lh4051-de-session --x11
+TryExec=@bindir@/lh4051-de
+Type=Application
+DesktopNames=LH4051-DE
+X-LH4051-Version=@version@
