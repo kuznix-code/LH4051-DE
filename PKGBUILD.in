@@ -20,7 +20,7 @@ sha256sums=('SKIP')
 
 build() {
     cd "$srcdir/LH4051-DE"
-    make PREFIX=/usr PKG_VERSION="$pkgver"
+    make PREFIX=/usr PKG_VERSION="$pkgver" all sessions
 }
 
 package_lh4051-de() {
@@ -29,6 +29,8 @@ package_lh4051-de() {
 }
 
 package_lh4051-de-data() {
+    arch=('any')
+    depends=()
     cd "$srcdir/LH4051-DE"
     make DESTDIR="$pkgdir" PREFIX=/usr install-data
 }
@@ -38,54 +40,65 @@ _install_x11_session() {
 }
 
 package_lh4051-de-session() {
+    arch=('any')
     depends=('lh4051-de' 'openbox')
     install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/xsessions/lh4051-de.desktop" "$pkgdir/usr/share/xsessions/lh4051-de.desktop"
 }
 
 package_lh4051-de-session-xfwm4() {
+    arch=('any')
     depends=('lh4051-de' 'xfwm4')
     _install_x11_session xfwm4
 }
 
 package_lh4051-de-session-marco() {
+    arch=('any')
     depends=('lh4051-de' 'marco')
     _install_x11_session marco
 }
 
 package_lh4051-de-session-metacity() {
+    arch=('any')
     depends=('lh4051-de' 'metacity')
     _install_x11_session metacity
 }
 
 package_lh4051-de-session-icewm() {
+    arch=('any')
     depends=('lh4051-de' 'icewm')
     _install_x11_session icewm
 }
 
 package_lh4051-de-session-fluxbox() {
+    arch=('any')
     depends=('lh4051-de' 'fluxbox')
     _install_x11_session fluxbox
 }
 
 package_lh4051-de-session-wayland() {
+    arch=('any')
     depends=('lh4051-de' 'labwc')
     install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de.desktop"
 }
 
 package_lh4051-de-session-wayland-sway() {
+    arch=('any')
     depends=('lh4051-de' 'sway')
     install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de-sway.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de-sway.desktop"
 }
 
 package_lh4051-de-sessions-x11-all() {
+    arch=('any')
     depends=('lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox')
 }
 
 package_lh4051-de-sessions-wayland-all() {
+    arch=('any')
     depends=('lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway')
 }
 
 package_lh4051-de-sessions-all() {
+    arch=('any')
     depends=('lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all')
 }
 
