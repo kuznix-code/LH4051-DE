@@ -401,7 +401,7 @@ ifeq ($(UNIX_LIKE),)
 	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
 else
 	@for session in $(notdir $(X11_SESSION_FILES)); do \
-	  $(INSTALL) -D -m 644 "$(SESSION_DIR)/xsessions/$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$session" || exit $?; \
+	  install -D -m 644 "$(SESSION_DIR)/xsessions/$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$session" || exit $?; \
 	done
 endif
 
