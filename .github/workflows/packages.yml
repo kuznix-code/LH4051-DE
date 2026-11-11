@@ -6,9 +6,13 @@ name: packages
 # RPM package names:
 #   LH4051-DE                    desktop shell and session wrapper
 #   lh4051-de-data               application menu entry
-#   lh4051-de-session            X11 session entry (requires openbox)
-#   lh4051-de-session-wayland    Wayland session entry (requires labwc)
-#   lh4051-de-updater            optional updater command
+#   lh4051-de-session                    Openbox X11 session
+#   lh4051-de-session-{xfwm4,marco,metacity,icewm,fluxbox}  optional X11 sessions
+#   lh4051-de-session-wayland            Labwc Wayland session
+#   lh4051-de-session-wayland-sway       Sway Wayland session
+#   lh4051-de-sessions-{x11,wayland}-all  session-group meta-packages
+#   lh4051-de-sessions-all                all-session meta-package
+#   lh4051-de-updater                     optional updater command
 #   lh4051-de-bootstrap          optional GTK/dependency bootstrap command
 #
 # RPMs are built from packaging/rpm/lh4051-de.spec.in. Architecture-independent
