@@ -413,7 +413,7 @@ ifeq ($(UNIX_LIKE),)
 else
 	@mkdir -p "$(DESTDIR)$(PREFIX)/share/wayland-sessions"
 	@for session in $(notdir $(WAYLAND_SESSION_FILES)); do \
-	  install -m 644 "$(SESSION_DIR)/wayland-sessions/$session" "$(DESTDIR)$(PREFIX)/share/wayland-sessions/$session" || exit $?; \
+	  install -m 644 "$(SESSION_DIR)/wayland-sessions/$$session" "$(DESTDIR)$(PREFIX)/share/wayland-sessions/$$session" || exit $$?; \
 	done
 endif
 
