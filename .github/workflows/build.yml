@@ -503,3 +503,12 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+      - name: Trigger COPR build
+        env:
+          COPR_WEBHOOK_URL: ${{ secrets.COPR_WEBHOOK_URL }}
+        run: |
+          if [ -z "$COPR_WEBHOOK_URL" ]; then
+            echo "::error::COPR_WEBHOOK_URL secret is not configured."
+            exit 1
+          fi
+          curl --fail --silent --show-error -X POST "$COPR_WEBHOOK_URL"
