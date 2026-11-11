@@ -400,8 +400,9 @@ install-session-x11: $(X11_SESSION_FILES)
 ifeq ($(UNIX_LIKE),)
 	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
 else
+	@mkdir -p "$(DESTDIR)$(PREFIX)/share/xsessions"
 	@for session in $(notdir $(X11_SESSION_FILES)); do \
-	  install -D -m 644 "$(SESSION_DIR)/xsessions/$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$session" || exit $?; \
+	  install -m 644 "$(SESSION_DIR)/xsessions/$$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$$session" || exit $$?; \
 	done
 endif
 
