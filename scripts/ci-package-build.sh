@@ -2,15 +2,15 @@
 # Builds distribution packages (from source) inside a distribution container. Used by CI
 # (.github/workflows/packages.yml). Run from the repository root.
 #
-#   FORMAT=deb|rpm|arch|apk  package format (the container must be Debian, Fedora, Arch or Alpine (musl) based)
+#   FORMAT=deb|rpm|arch  package format (the container must be Debian, Fedora or Arch based)
 #   PKG_VERSION=...       project version (scripts/pkg-version.sh), e.g. 0.2.0.dev.20261101.a31e706 or 0.1.1
 #   BUILD_DATA=1|0        keep the architecture-independent packages (lh4051-de-data, lh4051-de-session,
 #                         lh4051-de-session-wayland) (1) or only the architecture-specific lh4051-de
 #                         package (0). CI sets 1 on x86_64 only.
 #
-# Output: dist/*.deb, dist/*.rpm, dist/*.pkg.tar.zst or dist/*.apk
+# Output: dist/*.deb, dist/*.rpm, dist/*.pkg.tar.zst
 set -eu
-: "${FORMAT:?FORMAT must be deb, rpm, arch or apk}"
+: "${FORMAT:?FORMAT must be deb, rpm or arch}"
 : "${PKG_VERSION:?PKG_VERSION is required}"
 BUILD_DATA="${BUILD_DATA:-1}"
 
@@ -42,8 +42,6 @@ if ! command -v git >/dev/null 2>&1; then
         dnf -y install git
     elif command -v pacman >/dev/null 2>&1; then
         pacman -Sy --noconfirm --needed git
-    elif command -v apk >/dev/null 2>&1; then
-        apk add --no-cache git
     else
         echo "error: git is required but no supported package manager was found" >&2
         exit 127
@@ -81,16 +79,7 @@ VER_RPM="$TAG"
 RPM_RELEASE="${PKGREL}.${DATE_UTC}git${SHORT_COMMIT}%{?dist}"
 VER_ARCH="$TAG.r$COMMITS.$SHORT_COMMIT"
 VER_DEB="$TAG+git$DATE_UTC-$PKGREL+$TODAY_COMMITS"
-VER_APK="$(printf '%s' "$PKG_VERSION" | sed -E 's/-(alpha|beta|rc)\.?([0-9]+)$/_\1\2/')"
-case "$VER_APK" in
-    *_alpha[0-9]*|*_beta[0-9]*|*_rc[0-9]*) ;;
-    *)
-        apk_base="$(printf '%s' "$VER_APK" | sed -nE 's/^([0-9]+(\.[0-9]+){0,2}).*/\1/p')"
-        apk_day="$(printf '%s' "$VER_APK" | sed -nE 's/.*\.([0-9]{8})(\..*)?$/\1/p')"
-        if [ "$VER_APK" != "$apk_base" ] && [ -n "$apk_day" ]; then VER_APK="${apk_base}_git${apk_day}"; else VER_APK="$apk_base"; fi
-        ;;
-esac
-echo "package versions: deb=$VER_DEB rpm=$VER_RPM-$RPM_RELEASE arch=$VER_ARCH-$PKGREL apk=$VER_APK   machine: $(uname -m)"
+echo "package versions: deb=$VER_DEB rpm=$VER_RPM-$RPM_RELEASE arch=$VER_ARCH-$PKGREL   machine: $(uname -m)"
 # Copy of the working tree without VCS data and previous build output.
 copy_tree() {
     mkdir -p "$1"
@@ -149,30 +138,6 @@ arch)
     su builder -c "cd '$bdir' && PKGDEST='$bdir/out' PKGEXT='.pkg.tar.zst' makepkg -f --nocolor --noconfirm"
     for f in "$bdir"/out/*.pkg.tar.zst; do
         if [ "$BUILD_DATA" != 1 ] && [ "${f%-any.pkg.tar.zst}" != "$f" ]; then continue; fi
-        cp "$f" "$OUT"/
-    done
-    ;;
-apk)
-    apk add --no-cache alpine-sdk tar pkgconf gtk4.0-dev glib-dev
-    extra=""
-    if apk add --no-cache gtk4-layer-shell-dev; then extra="gtk4-layer-shell-dev"; else echo "gtk4-layer-shell not available; building composite-only"; fi
-
-    bdir="$WORK/apk"
-    mkdir -p "$bdir"
-    copy_tree "$WORK/lh4051-de-$VER_APK"
-    tar -C "$WORK" -czf "$bdir/lh4051-de-$VER_APK.tar.gz" "lh4051-de-$VER_APK"
-    sed -e "s|@PKGVER@|$VER_APK|g" -e "s|@PKG_VERSION@|$PKG_VERSION|g" -e "s|@MAKEDEPENDS_EXTRA@|$extra|g" \
-        packaging/alpine/APKBUILD.in > "$bdir/APKBUILD"
-
-    # abuild signs packages; a throwaway key is enough for CI artifacts. Building as root needs -F.
-    abuild-keygen -a -i -n
-    (cd "$bdir" && abuild -F checksum && REPODEST="$bdir/repo" abuild -F -r)
-    find "$bdir/repo" -name '*.apk' -exec ls -l {} +
-    for f in $(find "$bdir/repo" -name '*.apk'); do
-        case "$(basename "$f")" in
-            lh4051-de-data-*|lh4051-de-session-*) [ "$BUILD_DATA" = 1 ] || continue ;;
-            *-doc-*|*-dbg-*|*-dev-*) continue ;;
-        esac
         cp "$f" "$OUT"/
     done
     ;;
