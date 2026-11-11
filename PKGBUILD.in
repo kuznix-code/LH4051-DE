@@ -1,14 +1,17 @@
 # LH4051-DE Arch Linux package (stable release)
 pkgbase=lh4051-de
-pkgname=('lh4051-de' 'lh4051-de-updater' 'lh4051-de-bootstrap')
+pkgname=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all' 'lh4051-de-updater' 'lh4051-de-bootstrap')
 pkgver=@PKGVER@
 pkgrel=1
 pkgdesc='Longhorn 4051-inspired desktop environment'
 arch=('@ARCH@')
 url='https://github.com/kuznix-code/LH4051-DE'
 license=('GPL-3.0-or-later')
-depends=('gtk4' 'glib2')
+depends=('gtk4' 'glib2' 'lh4051-de-data')
 optdepends=('gtk4-layer-shell: native Wayland shell surfaces (layer-shell)'
+            'labwc: recommended Wayland compositor for the LH4051-DE session'
+            'sway: optional Sway compositor for the LH4051-DE Wayland session'
+            'appstream: App Store catalog search')'
             'labwc: recommended Wayland compositor for the LH4051-DE session'
             'appstream: App Store catalog search')
 makedepends=('git' 'base-devel' 'pkgconf' 'gtk4-layer-shell')
@@ -22,7 +25,68 @@ build() {
 
 package_lh4051-de() {
     cd "$srcdir/LH4051-DE"
-    make DESTDIR="$pkgdir" PREFIX=/usr install
+    make DESTDIR="$pkgdir" PREFIX=/usr install-bin
+}
+
+package_lh4051-de-data() {
+    cd "$srcdir/LH4051-DE"
+    make DESTDIR="$pkgdir" PREFIX=/usr install-data
+}
+
+_install_x11_session() {
+    install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/xsessions/lh4051-de-$1.desktop" "$pkgdir/usr/share/xsessions/lh4051-de-$1.desktop"
+}
+
+package_lh4051-de-session() {
+    depends=('lh4051-de' 'openbox')
+    install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/xsessions/lh4051-de.desktop" "$pkgdir/usr/share/xsessions/lh4051-de.desktop"
+}
+
+package_lh4051-de-session-xfwm4() {
+    depends=('lh4051-de' 'xfwm4')
+    _install_x11_session xfwm4
+}
+
+package_lh4051-de-session-marco() {
+    depends=('lh4051-de' 'marco')
+    _install_x11_session marco
+}
+
+package_lh4051-de-session-metacity() {
+    depends=('lh4051-de' 'metacity')
+    _install_x11_session metacity
+}
+
+package_lh4051-de-session-icewm() {
+    depends=('lh4051-de' 'icewm')
+    _install_x11_session icewm
+}
+
+package_lh4051-de-session-fluxbox() {
+    depends=('lh4051-de' 'fluxbox')
+    _install_x11_session fluxbox
+}
+
+package_lh4051-de-session-wayland() {
+    depends=('lh4051-de' 'labwc')
+    install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de.desktop"
+}
+
+package_lh4051-de-session-wayland-sway() {
+    depends=('lh4051-de' 'sway')
+    install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de-sway.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de-sway.desktop"
+}
+
+package_lh4051-de-sessions-x11-all() {
+    depends=('lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox')
+}
+
+package_lh4051-de-sessions-wayland-all() {
+    depends=('lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway')
+}
+
+package_lh4051-de-sessions-all() {
+    depends=('lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all')
 }
 
 package_lh4051-de-updater() {
