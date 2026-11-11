@@ -26,6 +26,11 @@ fi
 # Wayland: the shell uses wlr-layer-shell, so the compositor must support it
 # (labwc, sway, wayfire, river, hyprland...).
 if [ -n "${LH4051_COMPOSITOR:-}" ]; then
+    if [ "$LH4051_COMPOSITOR" = sway ]; then
+        cfg="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/lh4051-sway.XXXXXX")"
+        printf 'exec lh4051-de\nfloating_modifier Mod4\n' > "$cfg"
+        exec sway -c "$cfg"
+    fi
     exec $LH4051_COMPOSITOR
 fi
 if have labwc; then
