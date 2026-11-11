@@ -353,7 +353,8 @@ show-config:
 SESSION_DIR := $(BUILD)/data
 SESSION_WMS := xfwm4 marco metacity icewm fluxbox
 X11_SESSION_FILES := $(SESSION_DIR)/xsessions/lh4051-de.desktop $(addprefix $(SESSION_DIR)/xsessions/lh4051-de-,$(addsuffix .desktop,$(SESSION_WMS)))
-sessions: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(X11_SESSION_FILES)
+WAYLAND_SESSION_FILES := $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(SESSION_DIR)/wayland-sessions/lh4051-de-sway.desktop
+sessions: $(WAYLAND_SESSION_FILES) $(X11_SESSION_FILES)
 
 $(SESSION_DIR)/%: data/%.in
 	@mkdir -p $(@D)
@@ -406,17 +407,20 @@ else
 	done
 endif
 
-install-session-wayland: $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop
+install-session-wayland: $(WAYLAND_SESSION_FILES)
 ifeq ($(UNIX_LIKE),)
 	@echo "error: 'make install' is for unix-like systems. For Windows use 'make dist-win64' or 'make installer-win'."; exit 1
 else
-	$(call INSTALL_FILE,644,$(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop,$(SESSION_DIR)/wayland-sessions/lh4051-de.desktop)
+	@mkdir -p "$(DESTDIR)$(PREFIX)/share/wayland-sessions"
+	@for session in $(notdir $(WAYLAND_SESSION_FILES)); do \
+	  install -m 644 "$(SESSION_DIR)/wayland-sessions/$session" "$(DESTDIR)$(PREFIX)/share/wayland-sessions/$session" || exit $?; \
+	done
 endif
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(NAME) $(DESTDIR)$(PREFIX)/bin/lh4051-de-session $(DESTDIR)$(PREFIX)/bin/lh4051-de-updater \
 	  $(DESTDIR)$(PREFIX)/share/applications/lh4051-de.desktop \
-	  $(DESTDIR)$(PREFIX)/share/wayland-sessions/lh4051-de.desktop $(addprefix $(DESTDIR)$(PREFIX)/share/xsessions/,$(notdir $(X11_SESSION_FILES)))
+	  $(addprefix $(DESTDIR)$(PREFIX)/share/wayland-sessions/,$(notdir $(WAYLAND_SESSION_FILES))) $(addprefix $(DESTDIR)$(PREFIX)/share/xsessions/,$(notdir $(X11_SESSION_FILES)))
 	rm -f $(DESTDIR)$(PREFIX)/share/lh4051-de/version
 	-rmdir $(DESTDIR)$(PREFIX)/share/lh4051-de 2>/dev/null
 
