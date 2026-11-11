@@ -56,13 +56,13 @@ Package: lh4051-de-session
 Architecture: all
 Multi-Arch: foreign
 Depends: lh4051-de (>= ${source:Version}),
-         x-window-manager,
+         openbox,
          ${misc:Depends}
 Description: Longhorn 4051-inspired desktop environment - X11 session
  LH4051-DE is a desktop shell inspired by Windows Longhorn build 4051.
  .
  This package adds the "LH4051-DE" X11 session entry to the login manager.
- The session runs the shell on top of the default window manager.
+ The session runs the shell on top of the default Openbox window manager.
 
 Package: lh4051-de-session-wayland
 Architecture: all
@@ -75,3 +75,89 @@ Description: Longhorn 4051-inspired desktop environment - Wayland session
  .
  This package adds the "LH4051-DE (Wayland)" session entry to the login
  manager. The session runs the shell on top of the labwc compositor.
+
+Package: lh4051-de-session-xfwm4
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         xfwm4,
+         ${misc:Depends}
+Description: LH4051-DE X11 session with Xfwm4
+ X11 login session entry that launches LH4051-DE with Xfwm4.
+
+Package: lh4051-de-session-marco
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         marco,
+         ${misc:Depends}
+Description: LH4051-DE X11 session with Marco
+ X11 login session entry that launches LH4051-DE with Marco.
+
+Package: lh4051-de-session-metacity
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         metacity,
+         ${misc:Depends}
+Description: LH4051-DE X11 session with Metacity
+ X11 login session entry that launches LH4051-DE with Metacity.
+
+Package: lh4051-de-session-icewm
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         icewm,
+         ${misc:Depends}
+Description: LH4051-DE X11 session with IceWM
+ X11 login session entry that launches LH4051-DE with IceWM.
+
+Package: lh4051-de-session-fluxbox
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         fluxbox,
+         ${misc:Depends}
+Description: LH4051-DE X11 session with Fluxbox
+ X11 login session entry that launches LH4051-DE with Fluxbox.
+
+Package: lh4051-de-session-wayland-sway
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de (>= ${source:Version}),
+         sway,
+         ${misc:Depends}
+Description: LH4051-DE Wayland session with Sway
+ Wayland login session entry that launches LH4051-DE with Sway.
+
+Package: lh4051-de-sessions-x11-all
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de-session (= ${source:Version}),
+         lh4051-de-session-xfwm4 (= ${source:Version}),
+         lh4051-de-session-marco (= ${source:Version}),
+         lh4051-de-session-metacity (= ${source:Version}),
+         lh4051-de-session-icewm (= ${source:Version}),
+         lh4051-de-session-fluxbox (= ${source:Version}),
+         ${misc:Depends}
+Description: All LH4051-DE X11 sessions
+ Meta-package installing all available LH4051-DE X11 sessions and window managers.
+
+Package: lh4051-de-sessions-wayland-all
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de-session-wayland (= ${source:Version}),
+         lh4051-de-session-wayland-sway (= ${source:Version}),
+         ${misc:Depends}
+Description: All LH4051-DE Wayland sessions
+ Meta-package installing all available LH4051-DE Wayland sessions and compositors.
+
+Package: lh4051-de-sessions-all
+Architecture: all
+Multi-Arch: foreign
+Depends: lh4051-de-sessions-x11-all (= ${source:Version}),
+         lh4051-de-sessions-wayland-all (= ${source:Version}),
+         ${misc:Depends}
+Description: All LH4051-DE sessions
+ Meta-package installing every available LH4051-DE X11 and Wayland session.
+
