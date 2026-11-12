@@ -132,6 +132,33 @@ static void start_layer_mode(GtkApplication *app)
 
 /* ---------- composite mode ---------- */
 
+/* The composite shell is one full-screen window, so a window manager sees no taskbar and maximizes application
+ * windows over the whole screen, hiding the panel. On X11 the shell announces the panel as a reserved screen
+ * edge (_NET_WM_STRUT_PARTIAL), which window managers subtract from the area of maximized windows.
+ * xprop is used so that no X11 headers or libraries are needed at build time; without it (or on a window manager
+ * that ignores struts of non-dock windows) maximized windows still cover the panel. */
+#define STRUT_RETRIES 10
+
+static gboolean reserve_panel_strut(gpointer data)
+{
+    static int attempts;
+    char *value, *out = NULL;
+    const char *argv[] = { "xprop", "-name", "LH4051-DE", "-f", "_NET_WM_STRUT_PARTIAL", "32c",
+                           "-set", "_NET_WM_STRUT_PARTIAL", NULL, NULL };
+    gint status = 0;
+    gboolean ok;
+    (void)data;
+
+    value = g_strdup_printf("0,0,0,%d,0,0,0,0,0,0,0,0", LH4051_PANEL_HEIGHT);
+    argv[8] = value;
+    ok = g_spawn_sync(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                      NULL, NULL, &out, NULL, &status, NULL);
+    g_free(out);
+    g_free(value);
+    if ((ok && status == 0) || ++attempts >= STRUT_RETRIES) { attempts = 0; return G_SOURCE_REMOVE; }
+    return G_SOURCE_CONTINUE; /* the window may not be mapped yet */
+}
+
 static gboolean shell_key(GtkEventControllerKey *c, guint keyval, guint code,
                           GdkModifierType state, gpointer d)
 {
@@ -186,6 +213,8 @@ static void start_composite_mode(GtkApplication *app, gboolean windowed)
         gtk_window_fullscreen(win);
     }
     gtk_window_present(win);
+    if (!windowed && g_strcmp0(backend, "x11") == 0 && g_find_program_in_path("xprop"))
+        g_timeout_add(300, reserve_panel_strut, NULL);
 }
 
 /* ---------- entry points ---------- */
