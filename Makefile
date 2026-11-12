@@ -403,7 +403,7 @@ ifeq ($(UNIX_LIKE),)
 else
 	@mkdir -p "$(DESTDIR)$(PREFIX)/share/xsessions"
 	@for session in $(notdir $(X11_SESSION_FILES)); do \
-	  install -m 644 "$(SESSION_DIR)/xsessions/$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$session" || exit $$?; \
+	  install -m 644 "$(SESSION_DIR)/xsessions/$$session" "$(DESTDIR)$(PREFIX)/share/xsessions/$$session" || exit $$?; \
 	done
 endif
 
