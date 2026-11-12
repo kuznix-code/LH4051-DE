@@ -76,7 +76,7 @@ package_lh4051-de-session-fluxbox() {
 package_lh4051-de-session-wayland() {
     arch=('any')
     depends=('lh4051-de' 'labwc')
-    install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de.desktop"
+    install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de-wayland.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de-wayland.desktop"
 }
 
 package_lh4051-de-session-wayland-sway() {

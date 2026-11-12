@@ -214,7 +214,7 @@ make DESTDIR=%{buildroot} PREFIX=%{_prefix} install-updater install-bootstrap
 
 %files -n LH4051-DE-session-wayland
 %license LICENSE
-%{_datadir}/wayland-sessions/lh4051-de.desktop
+%{_datadir}/wayland-sessions/lh4051-de-wayland.desktop
 
 %files -n LH4051-DE-session-wayland-sway
 %license LICENSE
