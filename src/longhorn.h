@@ -3,7 +3,7 @@
 
 #include <gtk/gtk.h>
 
-#define LH4051_VERSION "0.1.2"
+#define LH4051_VERSION "0.1.3"
 #define LH4051_RES "/org/kuznix/lh4051de/"
 #define LH4051_PANEL_HEIGHT 40
 #define LH4051_SIDEBAR_WIDTH 240
