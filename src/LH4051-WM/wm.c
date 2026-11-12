@@ -6,8 +6,28 @@ static GPtrArray *windows;
 static LH4051WMChangedFunc changed_cb;
 static void *changed_data;
 static GtkWindow *last_active; /* last focused app window (composite mode keeps the shell focused) */
+static guint last_active_timeout;
+
+/* Focus moves to the shell for a moment when a taskbar button is pressed, so the window that just lost focus
+ * stays "last active" (for the click-to-minimize toggle) only for this long. Afterwards the taskbar follows
+ * the real focus again, e.g. when switching with Alt+Tab or clicking the desktop. */
+#define LAST_ACTIVE_GRACE_MS 600
 
 static void emit_changed(void) { if (changed_cb) changed_cb(changed_data); }
+
+static void cancel_last_active_timeout(void)
+{
+    if (last_active_timeout) { g_source_remove(last_active_timeout); last_active_timeout = 0; }
+}
+
+static gboolean last_active_expired(gpointer data)
+{
+    (void)data;
+    last_active_timeout = 0;
+    last_active = NULL;
+    emit_changed();
+    return G_SOURCE_REMOVE;
+}
 static void free_window(gpointer data) { LHWindow *w = data; g_free(w->title); g_free(w); }
 
 static LHWindow *find(GtkWindow *window, guint *index)
@@ -30,13 +50,19 @@ void lh4051_wm_shutdown(void)
     changed_cb = NULL;
     changed_data = NULL;
     last_active = NULL;
+    cancel_last_active_timeout();
     g_clear_pointer(&windows, g_ptr_array_unref);
 }
 
 static void on_active_changed(GObject *obj, GParamSpec *pspec, gpointer data)
 {
     (void)pspec; (void)data;
-    if (gtk_window_is_active(GTK_WINDOW(obj))) last_active = GTK_WINDOW(obj);
+    if (gtk_window_is_active(GTK_WINDOW(obj))) {
+        cancel_last_active_timeout();
+        last_active = GTK_WINDOW(obj);
+    } else if (GTK_WINDOW(obj) == last_active && !last_active_timeout) {
+        last_active_timeout = g_timeout_add(LAST_ACTIVE_GRACE_MS, last_active_expired, NULL);
+    }
     emit_changed();
 }
 
@@ -66,7 +92,7 @@ void lh4051_wm_unregister(GtkWindow *window)
     if (!window || !find(window, &i)) return;
     g_signal_handlers_disconnect_by_func(window, G_CALLBACK(on_active_changed), NULL);
     g_signal_handlers_disconnect_by_func(window, G_CALLBACK(on_destroyed), NULL);
-    if (last_active == window) last_active = NULL;
+    if (last_active == window) { last_active = NULL; cancel_last_active_timeout(); }
     g_ptr_array_remove_index(windows, i);
     emit_changed();
 }
@@ -107,7 +133,7 @@ void lh4051_wm_activate(GtkWindow *window) { if (window) gtk_window_present(wind
 void lh4051_wm_toggle(GtkWindow *window)
 {
     if (!window) return;
-    if (window == last_active) { last_active = NULL; gtk_window_minimize(window); emit_changed(); }
+    if (window == last_active) { last_active = NULL; cancel_last_active_timeout(); gtk_window_minimize(window); emit_changed(); }
     else gtk_window_present(window);
 }
 
