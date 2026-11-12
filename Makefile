@@ -353,7 +353,7 @@ show-config:
 SESSION_DIR := $(BUILD)/data
 SESSION_WMS := xfwm4 marco metacity icewm fluxbox
 X11_SESSION_FILES := $(SESSION_DIR)/xsessions/lh4051-de.desktop $(addprefix $(SESSION_DIR)/xsessions/lh4051-de-,$(addsuffix .desktop,$(SESSION_WMS)))
-WAYLAND_SESSION_FILES := $(SESSION_DIR)/wayland-sessions/lh4051-de.desktop $(SESSION_DIR)/wayland-sessions/lh4051-de-sway.desktop
+WAYLAND_SESSION_FILES := $(SESSION_DIR)/wayland-sessions/lh4051-de-wayland.desktop $(SESSION_DIR)/wayland-sessions/lh4051-de-sway.desktop
 sessions: $(WAYLAND_SESSION_FILES) $(X11_SESSION_FILES)
 
 $(SESSION_DIR)/%: data/%.in

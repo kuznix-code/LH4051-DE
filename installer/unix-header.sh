@@ -55,6 +55,9 @@ tail -n +"$LINE" "$0" | tar -xzf - -C "$TMP"
 
 # The payload was staged with PREFIX=/usr; relocate to the chosen prefix.
 $SUDO mkdir -p "$PREFIX"
+# Before 0.1.3 the Wayland session was wayland-sessions/lh4051-de.desktop, which clashed with the X11 entry of the
+# same name (login managers could start the X11 session instead). Remove the stale file left by older installs.
+$SUDO rm -f "$PREFIX/share/wayland-sessions/lh4051-de.desktop"
 ( cd "$TMP/usr" && find . -type f | sed 's|^\./||' ) > "$TMP/files.txt"
 while IFS= read -r f; do
     $SUDO mkdir -p "$PREFIX/$(dirname "$f")"
@@ -62,7 +65,7 @@ while IFS= read -r f; do
 done < "$TMP/files.txt"
 # session/desktop files embed /usr/bin; point them at the real prefix
 if [ "$PREFIX" != /usr ]; then
-    for f in share/applications/lh4051-de.desktop share/wayland-sessions/lh4051-de.desktop share/xsessions/lh4051-de.desktop; do
+    for f in share/applications/lh4051-de.desktop share/wayland-sessions/lh4051-de-wayland.desktop share/xsessions/lh4051-de.desktop; do
         [ -f "$PREFIX/$f" ] && $SUDO sed -i.bak "s|/usr/bin|$PREFIX/bin|g" "$PREFIX/$f" && $SUDO rm -f "$PREFIX/$f.bak"
     done
 fi
