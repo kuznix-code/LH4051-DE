@@ -30,7 +30,7 @@ MAKEFLAGS="-j$(nproc)"
 NINJAFLAGS="-j$(nproc)"
 DEBUG_CFLAGS="-g"
 DEBUG_CXXFLAGS="\$DEBUG_CFLAGS"
-EOFEOF
+EOF
 fi
 
 build_dir=/build/lh4051-de
