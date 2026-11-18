@@ -137,18 +137,18 @@ jobs:
 
           docker pull archlinux:base-devel
           for name in "${repositories[@]}"; do
-            source_dir="artifacts/packages-${name}"
+            source_dir="artifacts/packages-${name}-dev"
             target_dir="repo/${name}-dev/x86_64"
             mkdir -p "$target_dir"
             find "$target_dir" -maxdepth 1 -type f -name '*.pkg.tar.zst' -delete
-            rm -f "$target_dir/${name}.db" "$target_dir/${name}.db.tar.gz" \
-              "$target_dir/${name}.files" "$target_dir/${name}.files.tar.gz" \
-              "$target_dir/${name}.db.tar.gz.sig" "$target_dir/${name}.files.tar.gz.sig"
+            rm -f "$target_dir/${name}-dev.db" "$target_dir/${name}-dev.db.tar.gz" \
+              "$target_dir/${name}-dev.files" "$target_dir/${name}-dev.files.tar.gz" \
+              "$target_dir/${name}-dev.db.tar.gz.sig" "$target_dir/${name}-dev.files.tar.gz.sig"
 
             shopt -s nullglob
             packages=("$source_dir"/*.pkg.tar.zst)
             if (( ${#packages[@]} == 0 )); then
-              echo "::error::No package artifacts found for ${name}"
+              echo "::error::No package artifacts found for ${name}-dev"
               exit 1
             fi
             cp "${packages[@]}" "$target_dir/"
@@ -156,12 +156,12 @@ jobs:
             docker run --rm \
               -v "$PWD/$target_dir:/repo" \
               archlinux:base-devel \
-              bash -lc "repo-add '/repo/${name}.db.tar.gz' /repo/*.pkg.tar.zst"
+              bash -lc "repo-add '/repo/${name}-dev.db.tar.gz' /repo/*.pkg.tar.zst"
 
             # Publish regular database files as well as repo-add's archive names.
             for database in db files; do
-              rm -f "$target_dir/${name}.${database}"
-              cp "$target_dir/${name}.${database}.tar.gz" "$target_dir/${name}.${database}"
+              rm -f "$target_dir/${name}-dev.${database}"
+              cp "$target_dir/${name}-dev.${database}.tar.gz" "$target_dir/${name}-dev.${database}"
             done
           done
 
