@@ -154,6 +154,48 @@ Requires:       LH4051-DE = %{version}-%{release}
 Optional command-line updater for downloading and installing LH4051-DE releases
 or building the project from source where supported.
 
+%package -n LH4051-DE-full
+Summary:        Complete LH4051-DE package set, including updater and bootstrap
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       LH4051-DE-data = %{version}-%{release}
+Requires:       LH4051-DE-session = %{version}-%{release}
+Requires:       LH4051-DE-session-xfwm4 = %{version}-%{release}
+Requires:       LH4051-DE-session-marco = %{version}-%{release}
+Requires:       LH4051-DE-session-metacity = %{version}-%{release}
+Requires:       LH4051-DE-session-icewm = %{version}-%{release}
+Requires:       LH4051-DE-session-fluxbox = %{version}-%{release}
+Requires:       LH4051-DE-session-wayland = %{version}-%{release}
+Requires:       LH4051-DE-session-wayland-sway = %{version}-%{release}
+Requires:       LH4051-DE-sessions-x11-all = %{version}-%{release}
+Requires:       LH4051-DE-sessions-wayland-all = %{version}-%{release}
+Requires:       LH4051-DE-sessions-all = %{version}-%{release}
+Requires:       LH4051-DE-updater = %{version}-%{release}
+Requires:       LH4051-DE-bootstrap = %{version}-%{release}
+
+%description -n LH4051-DE-full
+Meta-package installing every LH4051-DE subpackage, including the updater and bootstrap tools.
+
+%package -n LH4051-DE-meta
+Summary:        LH4051-DE package set without updater or bootstrap
+BuildArch:      noarch
+Requires:       LH4051-DE = %{version}-%{release}
+Requires:       LH4051-DE-data = %{version}-%{release}
+Requires:       LH4051-DE-session = %{version}-%{release}
+Requires:       LH4051-DE-session-xfwm4 = %{version}-%{release}
+Requires:       LH4051-DE-session-marco = %{version}-%{release}
+Requires:       LH4051-DE-session-metacity = %{version}-%{release}
+Requires:       LH4051-DE-session-icewm = %{version}-%{release}
+Requires:       LH4051-DE-session-fluxbox = %{version}-%{release}
+Requires:       LH4051-DE-session-wayland = %{version}-%{release}
+Requires:       LH4051-DE-session-wayland-sway = %{version}-%{release}
+Requires:       LH4051-DE-sessions-x11-all = %{version}-%{release}
+Requires:       LH4051-DE-sessions-wayland-all = %{version}-%{release}
+Requires:       LH4051-DE-sessions-all = %{version}-%{release}
+
+%description -n LH4051-DE-meta
+Meta-package installing every LH4051-DE subpackage except the updater and bootstrap tools.
+
 %package -n LH4051-DE-bootstrap
 Summary:        LH4051-DE dependency bootstrap tool
 BuildArch:      noarch
