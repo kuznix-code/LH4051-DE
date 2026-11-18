@@ -2,11 +2,8 @@ name: Arch and CachyOS repositories
 
 on:
   push:
-    branches: [main, stable]
-    tags: ['v[0-9]*']
-  pull_request:
-    branches: [main, stable]
-  workflow_dispatch:
+    tags:
+      - 'v[0-9]*'
 
 concurrency:
   group: arch-packages-${{ github.ref }}
@@ -16,10 +13,37 @@ permissions:
   contents: read
 
 jobs:
+  validate-release:
+    # Stable release tags only: vX.Y.Z, and only when the tagged commit is on stable.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Check out LH4051-DE history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate stable release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable vX.Y.Z release tag; got $GITHUB_REF_NAME"
+            exit 1
+          fi
+          git fetch origin stable:refs/remotes/origin/stable
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/stable; then
+            echo "::error::Tag $GITHUB_REF_NAME does not point to a commit contained in the stable branch."
+            exit 1
+          fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "Validated stable release $GITHUB_REF_NAME"
+
   build:
-    # Ignore prerelease tags such as v0.2.0-beta.1. Only plain vX.Y.Z tags
-    # are treated as stable releases.
-    if: ${{ github.event_name != 'push' || github.ref_type != 'tag' || !contains(github.ref_name, '-') }}
+    needs: validate-release
     name: ${{ matrix.repo }}
     runs-on: ubuntu-latest
     strategy:
@@ -39,9 +63,7 @@ jobs:
             profile: cachy
             march: x86-64-v3
           - repo: kuznix-cachy-v4
-            image: cachyos/cachyos
-# Use the generic image: the v4 image cannot start unless the host CPU supports AVX-512.
-- repo: kuznix-cachy-v4
+            # Generic image avoids the AVX-512 host-CPU requirement of cachyos-v4.
             image: cachyos/cachyos
             profile: cachy
             march: x86-64-v4
@@ -50,33 +72,17 @@ jobs:
             profile: cachy
             march: znver4
     steps:
-      - name: Check out LH4051-DE source
+      - name: Check out tagged LH4051-DE source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Determine package version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          base_version="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)"
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            pkgver="${GITHUB_REF_NAME#v}"
-          else
-            commit_count="$(git rev-list --count "$GITHUB_SHA")"
-            short_sha="$(git rev-parse --short=7 "$GITHUB_SHA")"
-            pkgver="${base_version}.r${commit_count}.g${short_sha}"
-          fi
-          echo "pkgver=$pkgver" >> "$GITHUB_OUTPUT"
-          echo "Package version: $pkgver"
 
       - name: Build split packages in ${{ matrix.image }}
         env:
           BUILD_IMAGE: ${{ matrix.image }}
           BUILD_PROFILE: ${{ matrix.profile }}
           BUILD_MARCH: ${{ matrix.march }}
-          PKGVER: ${{ steps.version.outputs.pkgver }}
+          PKGVER: ${{ needs.validate-release.outputs.version }}
           SOURCE_COMMIT: ${{ github.sha }}
         shell: bash
         run: |
@@ -100,7 +106,6 @@ jobs:
           retention-days: 7
 
   publish:
-    if: ${{ github.event_name != 'pull_request' }}
     needs: build
     runs-on: ubuntu-latest
     concurrency:
@@ -113,8 +118,7 @@ jobs:
           repository: kuznix-code/repo
           ref: main
           path: repo
-          # Create a fine-grained PAT with Contents: Read and write for
-          # kuznix-code/repo, then save it as REPO_TOKEN in this repository.
+          # Fine-grained PAT: Contents read/write on kuznix-code/repo, stored as REPO_TOKEN.
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: Download built packages
@@ -123,15 +127,10 @@ jobs:
           pattern: packages-*
           path: artifacts
 
-      - name: Update package databases
+      - name: Update stable package databases
         shell: bash
         run: |
           set -euo pipefail
-          suffix=""
-          if [[ "$GITHUB_REF_NAME" == "main" ]]; then
-            suffix="-dev"
-          fi
-
           repositories=(
             kuznix-arch
             kuznix-cachy
@@ -143,10 +142,8 @@ jobs:
           docker pull archlinux:base-devel
           for name in "${repositories[@]}"; do
             source_dir="artifacts/packages-${name}"
-            target_dir="repo/${name}${suffix}/x86_64"
+            target_dir="repo/${name}/x86_64"
             mkdir -p "$target_dir"
-
-            # Each publish replaces the previous package set for this track.
             find "$target_dir" -maxdepth 1 -type f -name '*.pkg.tar.zst' -delete
             rm -f "$target_dir/${name}.db" "$target_dir/${name}.db.tar.gz" \
               "$target_dir/${name}.files" "$target_dir/${name}.files.tar.gz" \
@@ -154,10 +151,10 @@ jobs:
 
             shopt -s nullglob
             packages=("$source_dir"/*.pkg.tar.zst)
-            (( ${#packages[@]} > 0 )) || {
+            if (( ${#packages[@]} == 0 )); then
               echo "::error::No package artifacts found for ${name}"
               exit 1
-            }
+            fi
             cp "${packages[@]}" "$target_dir/"
 
             docker run --rm \
@@ -165,29 +162,23 @@ jobs:
               archlinux:base-devel \
               bash -lc "repo-add '/repo/${name}.db.tar.gz' /repo/*.pkg.tar.zst"
 
-            # Publish regular database files as well as repo-add's archive names;
-            # static hosting does not need to resolve symlinks.
+            # Publish regular database files as well as repo-add's archive names.
             for database in db files; do
               rm -f "$target_dir/${name}.${database}"
               cp "$target_dir/${name}.${database}.tar.gz" "$target_dir/${name}.${database}"
             done
           done
 
-      - name: Commit package repositories
+      - name: Commit stable package repositories
         shell: bash
         run: |
           set -euo pipefail
           git -C repo config user.name "github-actions[bot]"
           git -C repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C repo add -A \
-            kuznix-arch kuznix-arch-dev \
-            kuznix-cachy kuznix-cachy-dev \
-            kuznix-cachy-v3 kuznix-cachy-v3-dev \
-            kuznix-cachy-v4 kuznix-cachy-v4-dev \
-            kuznix-cachy-znver4 kuznix-cachy-znver4-dev
+          git -C repo add -A kuznix-arch kuznix-cachy kuznix-cachy-v3 kuznix-cachy-v4 kuznix-cachy-znver4
           if git -C repo diff --cached --quiet; then
             echo "No repository changes to publish."
             exit 0
           fi
-          git -C repo commit -m "Update LH4051-DE Arch package repositories"
+          git -C repo commit -m "Publish LH4051-DE ${GITHUB_REF_NAME} Arch packages"
           git -C repo push origin HEAD:main
