@@ -1,82 +1,190 @@
-name: packages
-
-# Distribution packages built from source: .deb (Debian), .rpm (Fedora), .pkg.tar.zst (Arch Linux),
-# for x86_64 and arm64, on the `main` and `stable` branches.
-#
-# RPM package names:
-#   LH4051-DE                    desktop shell and session wrapper
-#   lh4051-de-data               application menu entry
-#   lh4051-de-session                    Openbox X11 session
-#   lh4051-de-session-{xfwm4,marco,metacity,icewm,fluxbox}  optional X11 sessions
-#   lh4051-de-session-wayland            Labwc Wayland session
-#   lh4051-de-session-wayland-sway       Sway Wayland session
-#   lh4051-de-sessions-{x11,wayland}-all  session-group meta-packages
-#   lh4051-de-sessions-all                all-session meta-package
-#   lh4051-de-updater                     optional updater command
-#   lh4051-de-bootstrap          optional GTK/dependency bootstrap command
-#
-# RPMs are built from packaging/rpm/lh4051-de.spec.in. Architecture-independent
-# packages are built once, by the x86_64 job, and shared by both architectures.
-#
-# The universal installers and tarballs are built by build.yml; this workflow only adds native packages.
+name: Arch and CachyOS repositories
 
 on:
   push:
-    branches:
-      - main
-      - stable
+    branches: [main, stable]
+    tags: ['v[0-9]*']
   pull_request:
-    branches:
-      - main
-      - stable
+    branches: [main, stable]
   workflow_dispatch:
 
 concurrency:
-  group: packages-${{ github.ref }}
+  group: arch-packages-\${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  package:
-    name: ${{ matrix.format }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+  build:
+    # Ignore prerelease tags such as v0.2.0-beta.1. Only plain vX.Y.Z tags
+    # are treated as stable releases.
+    if: \${{ github.event_name != 'push' || github.ref_type != 'tag' || !contains(github.ref_name, '-') }}
+    name: \${{ matrix.repo }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # --- Debian packages, built with dpkg-buildpackage in Debian trixie (GTK 4.18)
-          - { format: deb,  arch: x86_64, runner: ubuntu-latest,     image: "debian:trixie",         data: "1", glob: "dist/*.deb" }
-          - { format: deb,  arch: arm64,  runner: ubuntu-24.04-arm,  image: "debian:trixie",         data: "0", glob: "dist/*.deb" }
-          # --- RPM packages, built with rpmbuild in Fedora
-          - { format: rpm,  arch: x86_64, runner: ubuntu-latest,     image: "fedora:latest",         data: "1", glob: "dist/*.rpm" }
-          - { format: rpm,  arch: arm64,  runner: ubuntu-24.04-arm,  image: "fedora:latest",         data: "0", glob: "dist/*.rpm" }
-          # --- Arch Linux packages, built with makepkg. Arch Linux ARM has no Docker Hub image: its root
-          #     filesystem is imported below (the runner is arm64, so nothing is emulated).
-          - { format: arch, arch: x86_64, runner: ubuntu-latest,     image: "archlinux:base-devel",  data: "1", glob: "dist/*.pkg.tar.zst" }
-          - { format: arch, arch: arm64,  runner: ubuntu-24.04-arm,  image: "alarm-local:latest",    data: "0", glob: "dist/*.pkg.tar.zst", rootfs: "ArchLinuxARM-aarch64-latest.tar.gz" }
+          - repo: kuznix-arch
+            image: archlinux:base-devel
+            profile: arch
+            march: ""
+          - repo: kuznix-cachy
+            image: cachyos/cachyos
+            profile: cachy
+            march: x86-64
+          - repo: kuznix-cachy-v3
+            image: cachyos/cachyos-v3
+            profile: cachy
+            march: x86-64-v3
+          - repo: kuznix-cachy-v4
+            image: cachyos/cachyos-v4
+            profile: cachy
+            march: x86-64-v4
+          - repo: kuznix-cachy-znver4
+            image: cachyos/cachyos-v4
+            profile: cachy
+            march: znver4
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out LH4051-DE source
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Artifact version
-        run: echo "PKG_VERSION=$(sh scripts/pkg-version.sh)" >> "$GITHUB_ENV"
-      - name: Import the Arch Linux ARM root filesystem
-        if: matrix.rootfs != ''
+
+      - name: Determine package version
+        id: version
+        shell: bash
         run: |
-          for base in https://os.archlinuxarm.org/os http://os.archlinuxarm.org/os; do
-            curl -fsSLO "$base/${{ matrix.rootfs }}" && curl -fsSLO "$base/${{ matrix.rootfs }}.md5" && break
-          done
-          [ -s "${{ matrix.rootfs }}" ] || { echo "::error::could not download ${{ matrix.rootfs }}"; exit 1; }
-          md5sum -c "${{ matrix.rootfs }}.md5"
-          docker import --platform linux/arm64 "${{ matrix.rootfs }}" ${{ matrix.image }}
-      - name: Build ${{ matrix.format }} packages in ${{ matrix.image }}
+          set -euo pipefail
+          base_version="$(sed -n 's/^#define LH4051_VERSION "\(.*\)"/\1/p' src/longhorn.h)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            pkgver="\${GITHUB_REF_NAME#v}"
+          else
+            commit_count="$(git rev-list --count "$GITHUB_SHA")"
+            short_sha="$(git rev-parse --short=7 "$GITHUB_SHA")"
+            pkgver="\${base_version}.r\${commit_count}.g\${short_sha}"
+          fi
+          echo "pkgver=$pkgver" >> "$GITHUB_OUTPUT"
+          echo "Package version: $pkgver"
+
+      - name: Build split packages in \${{ matrix.image }}
+        env:
+          BUILD_IMAGE: \${{ matrix.image }}
+          BUILD_PROFILE: \${{ matrix.profile }}
+          BUILD_MARCH: \${{ matrix.march }}
+          PKGVER: \${{ steps.version.outputs.pkgver }}
+          SOURCE_COMMIT: \${{ github.sha }}
+        shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p "out/\${{ matrix.repo }}"
+          docker pull "$BUILD_IMAGE"
           docker run --rm \
-            -e PKG_VERSION -e FORMAT=${{ matrix.format }} -e BUILD_DATA=${{ matrix.data }} \
-            -v "$PWD:/src" -w /src ${{ matrix.image }} sh scripts/ci-package-build.sh
-      - name: List packages
-        run: ls -l dist
-      - uses: actions/upload-artifact@v4
+            -e BUILD_PROFILE -e BUILD_MARCH -e PKGVER -e SOURCE_COMMIT \
+            -v "$PWD:/src:ro" \
+            -v "$PWD/out/\${{ matrix.repo }}:/out" \
+            "$BUILD_IMAGE" bash /src/scripts/ci-arch-repo-build.sh
+          echo "Built packages for \${{ matrix.repo }}:"
+          ls -lh "out/\${{ matrix.repo }}"
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: LH4051-DE-${{ matrix.format }}-${{ matrix.arch }}
-          path: ${{ matrix.glob }}
+          name: packages-\${{ matrix.repo }}
+          path: out/\${{ matrix.repo }}/*.pkg.tar.zst
           if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: \${{ github.event_name != 'pull_request' }}
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: kuznix-arch-repository-publish
+      cancel-in-progress: false
+    steps:
+      - name: Check out package repository
+        uses: actions/checkout@v4
+        with:
+          repository: kuznix-code/repo
+          ref: main
+          path: repo
+          # Create a fine-grained PAT with Contents: Read and write for
+          # kuznix-code/repo, then save it as REPO_TOKEN in this repository.
+          token: \${{ secrets.REPO_TOKEN }}
+
+      - name: Download built packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: artifacts
+
+      - name: Update package databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          suffix=""
+          if [[ "$GITHUB_REF_NAME" == "main" ]]; then
+            suffix="-dev"
+          fi
+
+          repositories=(
+            kuznix-arch
+            kuznix-cachy
+            kuznix-cachy-v3
+            kuznix-cachy-v4
+            kuznix-cachy-znver4
+          )
+
+          docker pull archlinux:base-devel
+          for name in "\${repositories[@]}"; do
+            source_dir="artifacts/packages-\${name}"
+            target_dir="repo/\${name}\${suffix}/x86_64"
+            mkdir -p "$target_dir"
+
+            # Each publish replaces the previous package set for this track.
+            find "$target_dir" -maxdepth 1 -type f -name '*.pkg.tar.zst' -delete
+            rm -f "$target_dir/\${name}.db" "$target_dir/\${name}.db.tar.gz" \
+              "$target_dir/\${name}.files" "$target_dir/\${name}.files.tar.gz" \
+              "$target_dir/\${name}.db.tar.gz.sig" "$target_dir/\${name}.files.tar.gz.sig"
+
+            shopt -s nullglob
+            packages=("$source_dir"/*.pkg.tar.zst)
+            (( \${#packages[@]} > 0 )) || {
+              echo "::error::No package artifacts found for \${name}"
+              exit 1
+            }
+            cp "\${packages[@]}" "$target_dir/"
+
+            docker run --rm \
+              -v "$PWD/$target_dir:/repo" \
+              archlinux:base-devel \
+              bash -lc "repo-add '/repo/\${name}.db.tar.gz' /repo/*.pkg.tar.zst"
+
+            # Publish regular database files as well as repo-add's archive names;
+            # static hosting does not need to resolve symlinks.
+            for database in db files; do
+              rm -f "$target_dir/\${name}.\${database}"
+              cp "$target_dir/\${name}.\${database}.tar.gz" "$target_dir/\${name}.\${database}"
+            done
+          done
+
+      - name: Commit package repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C repo config user.name "github-actions[bot]"
+          git -C repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C repo add -A \
+            kuznix-arch kuznix-arch-dev \
+            kuznix-cachy kuznix-cachy-dev \
+            kuznix-cachy-v3 kuznix-cachy-v3-dev \
+            kuznix-cachy-v4 kuznix-cachy-v4-dev \
+            kuznix-cachy-znver4 kuznix-cachy-znver4-dev
+          if git -C repo diff --cached --quiet; then
+            echo "No repository changes to publish."
+            exit 0
+          fi
+          git -C repo commit -m "Update LH4051-DE Arch package repositories"
+          git -C repo push origin HEAD:main
