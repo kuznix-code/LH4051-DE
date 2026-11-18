@@ -1,6 +1,6 @@
 # LH4051-DE Arch Linux package (stable release)
 pkgbase=lh4051-de
-pkgname=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all' 'lh4051-de-updater' 'lh4051-de-bootstrap')
+pkgname=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all' 'lh4051-de-updater' 'lh4051-de-bootstrap' 'lh4051-de-full' 'lh4051-de-meta')
 pkgver=@PKGVER@
 pkgrel=1
 pkgdesc='Longhorn 4051-inspired desktop environment'
@@ -109,4 +109,13 @@ package_lh4051-de-updater() {
 package_lh4051-de-bootstrap() {
     depends=()
     install -Dm755 "$srcdir/LH4051-DE/scripts/lh4051-de-bootstrap" "$pkgdir/usr/bin/lh4051-de-bootstrap"
+}
+package_lh4051-de-full() {
+    arch=('any')
+    depends=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all' 'lh4051-de-updater' 'lh4051-de-bootstrap')
+}
+
+package_lh4051-de-meta() {
+    arch=('any')
+    depends=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all')
 }
