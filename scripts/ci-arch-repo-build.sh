@@ -13,7 +13,7 @@ if [[ "$(uname -m)" != "x86_64" ]]; then
 fi
 
 pacman -Syu --noconfirm --needed \
-    base-devel git pkgconf gtk4 glib2 gtk4-layer-shell
+    base-devel git shadow pkgconf gtk4 glib2 gtk4-layer-shell
 
 MAKEPKG_CONFIG=/etc/makepkg.conf
 if [[ "$BUILD_PROFILE" == "cachy" ]]; then
@@ -22,22 +22,19 @@ if [[ "$BUILD_PROFILE" == "cachy" ]]; then
     cat > "$MAKEPKG_CONFIG" <<EOF
 source /etc/makepkg.conf
 CPPFLAGS=""
-CFLAGS="-march=${BUILD_MARCH} -O3 -pipe -fno-plt -fexceptions \\
-        -Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security \\
-        -fstack-clash-protection -fcf-protection"
+CFLAGS="-march=${BUILD_MARCH} -O3 -pipe -fno-plt -fexceptions -Wp,-D_FORTIFY_SOURCE=3 -Wformat -Werror=format-security -fstack-clash-protection -fcf-protection"
 CXXFLAGS="\$CFLAGS -Wp,-D_GLIBCXX_ASSERTIONS"
-LDFLAGS="-Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now \\
-         -Wl,-z,pack-relative-relocs"
+LDFLAGS="-Wl,-O1 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,-z,pack-relative-relocs"
 LTOFLAGS="-flto=auto"
 MAKEFLAGS="-j$(nproc)"
 NINJAFLAGS="-j$(nproc)"
 DEBUG_CFLAGS="-g"
 DEBUG_CXXFLAGS="\$DEBUG_CFLAGS"
-EOF
+EOFEOF
 fi
 
 build_dir=/build/lh4051-de
-id builder >/dev/null 2>&1 || useradd --create-home builder
+id builder >/dev/null 2>&1 || useradd --create-home --user-group builder
 install -d -m 0755 -o builder -g builder "$build_dir" /out
 
 sed \
