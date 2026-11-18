@@ -137,7 +137,7 @@ jobs:
 
           docker pull archlinux:base-devel
           for name in "${repositories[@]}"; do
-            source_dir="artifacts/packages-${name}-dev"
+            source_dir="artifacts/packages-${name}"
             target_dir="repo/${name}-dev/x86_64"
             mkdir -p "$target_dir"
             find "$target_dir" -maxdepth 1 -type f -name '*.pkg.tar.zst' -delete
