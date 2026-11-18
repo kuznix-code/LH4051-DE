@@ -268,6 +268,10 @@ make DESTDIR=%{buildroot} PREFIX=%{_prefix} install-updater install-bootstrap
 
 %files -n LH4051-DE-sessions-all
 
+%files -n LH4051-DE-full
+
+%files -n LH4051-DE-meta
+
 %files -n LH4051-DE-updater
 %license LICENSE
 %{_bindir}/lh4051-de-updater
