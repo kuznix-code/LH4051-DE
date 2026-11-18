@@ -1,9 +1,9 @@
 name: Arch and CachyOS repositories
 
 on:
-  push:
-    tags:
-      - 'v[0-9]*'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: arch-packages-${{ github.ref }}
@@ -13,37 +13,33 @@ permissions:
   contents: read
 
 jobs:
-  validate-release:
-    # Stable release tags only: vX.Y.Z, and only when the tagged commit is on stable.
-    if: ${{ !contains(github.ref_name, '-') }}
+  validate-dev:
+    # Run scheduled/manual development builds only from main.
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.release.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Check out LH4051-DE history
+      - name: Check out main branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
-      - name: Validate stable release tag
-        id: release
+      - name: Determine development package version
+        id: version
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Expected a stable vX.Y.Z release tag; got $GITHUB_REF_NAME"
-            exit 1
-          fi
-          git fetch origin stable:refs/remotes/origin/stable
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/stable; then
-            echo "::error::Tag $GITHUB_REF_NAME does not point to a commit contained in the stable branch."
-            exit 1
-          fi
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          echo "Validated stable release $GITHUB_REF_NAME"
+          base_version="$(sed -n 's/^#define LH4051_VERSION "\\(.*\\)"/\\1/p' src/longhorn.h)"
+          build_date="$(date -u +%Y%m%d)"
+          short_sha="$(git rev-parse --short=7 "$GITHUB_SHA")"
+          pkgver="${base_version}.${build_date}.g${short_sha}"
+          echo "version=$pkgver" >> "$GITHUB_OUTPUT"
+          echo "Development package version: $pkgver"
 
   build:
-    needs: validate-release
+    needs: validate-dev
     name: ${{ matrix.repo }}
     runs-on: ubuntu-latest
     strategy:
@@ -72,7 +68,7 @@ jobs:
             profile: cachy
             march: znver4
     steps:
-      - name: Check out tagged LH4051-DE source
+      - name: Check out current LH4051-DE main source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -82,7 +78,7 @@ jobs:
           BUILD_IMAGE: ${{ matrix.image }}
           BUILD_PROFILE: ${{ matrix.profile }}
           BUILD_MARCH: ${{ matrix.march }}
-          PKGVER: ${{ needs.validate-release.outputs.version }}
+          PKGVER: ${{ needs.validate-dev.outputs.version }}
           SOURCE_COMMIT: ${{ github.sha }}
         shell: bash
         run: |
@@ -127,7 +123,7 @@ jobs:
           pattern: packages-*
           path: artifacts
 
-      - name: Update stable package databases
+      - name: Update development package databases
         shell: bash
         run: |
           set -euo pipefail
@@ -142,7 +138,7 @@ jobs:
           docker pull archlinux:base-devel
           for name in "${repositories[@]}"; do
             source_dir="artifacts/packages-${name}"
-            target_dir="repo/${name}/x86_64"
+            target_dir="repo/${name}-dev/x86_64"
             mkdir -p "$target_dir"
             find "$target_dir" -maxdepth 1 -type f -name '*.pkg.tar.zst' -delete
             rm -f "$target_dir/${name}.db" "$target_dir/${name}.db.tar.gz" \
@@ -169,16 +165,16 @@ jobs:
             done
           done
 
-      - name: Commit stable package repositories
+      - name: Commit development package repositories
         shell: bash
         run: |
           set -euo pipefail
           git -C repo config user.name "github-actions[bot]"
           git -C repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C repo add -A kuznix-arch kuznix-cachy kuznix-cachy-v3 kuznix-cachy-v4 kuznix-cachy-znver4
+          git -C repo add -A kuznix-arch-dev kuznix-cachy-dev kuznix-cachy-v3-dev kuznix-cachy-v4-dev kuznix-cachy-znver4-dev
           if git -C repo diff --cached --quiet; then
             echo "No repository changes to publish."
             exit 0
           fi
-          git -C repo commit -m "Publish LH4051-DE ${GITHUB_REF_NAME} Arch packages"
+          git -C repo commit -m "Publish LH4051-DE development packages"
           git -C repo push origin HEAD:main
