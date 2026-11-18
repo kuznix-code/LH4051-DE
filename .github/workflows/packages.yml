@@ -39,11 +39,14 @@ jobs:
             profile: cachy
             march: x86-64-v3
           - repo: kuznix-cachy-v4
-            image: cachyos/cachyos-v4
+            image: cachyos/cachyos
+# Use the generic image: the v4 image cannot start unless the host CPU supports AVX-512.
+- repo: kuznix-cachy-v4
+            image: cachyos/cachyos
             profile: cachy
             march: x86-64-v4
           - repo: kuznix-cachy-znver4
-            image: cachyos/cachyos-v4
+            image: cachyos/cachyos
             profile: cachy
             march: znver4
     steps:
