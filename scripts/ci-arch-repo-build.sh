@@ -51,8 +51,8 @@ su -s /bin/bash builder -c \
     "cd '$build_dir' && MAKEPKG_CONF='$MAKEPKG_CONFIG' PKGDEST=/out makepkg --noconfirm --cleanbuild"
 
 package_count="$(find /out -maxdepth 1 -type f -name '*.pkg.tar.zst' | wc -l)"
-if [[ "$package_count" -lt 17 ]]; then
-    echo "error: expected all 17 split packages, got ${package_count}" >&2
+if [[ "$package_count" -lt 19 ]]; then
+    echo "error: expected all 19 split packages, got ${package_count}" >&2
     find /out -maxdepth 1 -type f -printf '%f\n' >&2
     exit 1
 fi
