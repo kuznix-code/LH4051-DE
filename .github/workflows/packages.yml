@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base_version="$(sed -n 's/^#define LH4051_VERSION "\\(.*\\)"/\\1/p' src/longhorn.h)"
+          base_version="$(awk -F '"' '/^#define LH4051_VERSION / { print $2; exit }' src/longhorn.h)"
           build_date="$(date -u +%Y%m%d)"
           short_sha="$(git rev-parse --short=7 "$GITHUB_SHA")"
           pkgver="${base_version}.${build_date}.g${short_sha}"
