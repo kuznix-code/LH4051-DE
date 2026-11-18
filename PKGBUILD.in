@@ -1,6 +1,6 @@
 # LH4051-DE Arch Linux package (stable release)
 pkgbase=lh4051-de
-pkgname=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all' 'lh4051-de-updater' 'lh4051-de-bootstrap' 'lh4051-de-full' 'lh4051-de-meta')
+pkgname=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-session-all' 'lh4051-de-session-wayland-all' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all' 'lh4051-de-updater' 'lh4051-de-bootstrap' 'lh4051-de-full' 'lh4051-de-meta')
 pkgver=@PKGVER@
 pkgrel=1
 pkgdesc='Longhorn 4051-inspired desktop environment'
@@ -85,19 +85,30 @@ package_lh4051-de-session-wayland-sway() {
     install -Dm644 "$srcdir/LH4051-DE/build/linux-gcc/data/wayland-sessions/lh4051-de-sway.desktop" "$pkgdir/usr/share/wayland-sessions/lh4051-de-sway.desktop"
 }
 
-package_lh4051-de-sessions-x11-all() {
+package_lh4051-de-session-all() {
     arch=('any')
     depends=('lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox')
 }
 
-package_lh4051-de-sessions-wayland-all() {
+package_lh4051-de-session-wayland-all() {
     arch=('any')
     depends=('lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway')
 }
 
+# Compatibility aggregate packages retained for existing installations.
+package_lh4051-de-sessions-x11-all() {
+    arch=('any')
+    depends=('lh4051-de-session-all')
+}
+
+package_lh4051-de-sessions-wayland-all() {
+    arch=('any')
+    depends=('lh4051-de-session-wayland-all')
+}
+
 package_lh4051-de-sessions-all() {
     arch=('any')
-    depends=('lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all')
+    depends=('lh4051-de-session-all' 'lh4051-de-session-wayland-all')
 }
 
 package_lh4051-de-updater() {
@@ -116,5 +127,5 @@ package_lh4051-de-full() {
 
 package_lh4051-de-meta() {
     arch=('any')
-    depends=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-icewm' 'lh4051-de-session-fluxbox' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-sessions-x11-all' 'lh4051-de-sessions-wayland-all' 'lh4051-de-sessions-all')
+    depends=('lh4051-de' 'lh4051-de-data' 'lh4051-de-session' 'lh4051-de-session-xfwm4' 'lh4051-de-session-marco' 'lh4051-de-session-metacity' 'lh4051-de-session-fluxbox' 'lh4051-de-session-icewm' 'lh4051-de-session-all' 'lh4051-de-session-wayland' 'lh4051-de-session-wayland-sway' 'lh4051-de-session-wayland-all' 'lh4051-de-sessions-all')
 }
